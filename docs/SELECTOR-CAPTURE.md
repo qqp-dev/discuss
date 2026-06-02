@@ -33,36 +33,93 @@ own human-authenticated session — **no credentials are ever stored** (FR-002, 
 
 ## 1. Capture the four fixtures
 
-Run this capture helper (paste into a scratch file, e.g. `scratch_capture.py`, and run it
-with the venv python). It opens a **persistent** browser you log into by hand, then saves
-each page's HTML on an Enter prompt. Save four pages:
+Run this capture helper (paste into a scratch file, e.g. `scratch_capture.py`, in the
+**project root**, and run it with the venv python: `.venv/bin/python scratch_capture.py`).
+It opens a **persistent** browser you log into by hand, then saves each page's HTML on an
+Enter prompt. The helper is deliberately defensive about the one failure mode that bites
+here — login bounces `www.phoenix.edu` → `my.phoenix.edu` and opens views in new tabs, so
+a single fixed `ctx.pages[0]` handle goes stale and silently re-saves the same Home page.
+So it **re-resolves the tab you're actually looking at on every save**, **prints the URL +
+title** it captured, and **refuses to save a page byte-identical to one already saved**.
+Save four pages:
 
 ```python
-# scratch_capture.py — throwaway capture helper (do not commit)
+# scratch_capture.py — throwaway capture helper (do not commit).
+# Run from the project root with the venv python: .venv/bin/python scratch_capture.py
+import hashlib
+import sys
 from pathlib import Path
+
 from playwright.sync_api import sync_playwright
 
-OUT = Path("fixtures"); OUT.mkdir(exist_ok=True)
+# Refuse to run anywhere but the project root, so fixtures never again land somewhere
+# stray (a CWD-relative OUT is how an earlier run wrote four files onto the Desktop).
+if not (Path("pyproject.toml").exists() and Path("src/discuss").is_dir()):
+    sys.exit("Run this from the discuss project root (where pyproject.toml lives).")
+
+OUT = Path("fixtures").resolve()
+OUT.mkdir(exist_ok=True)
+print(f"Saving fixtures to {OUT}")
 
 with sync_playwright() as p:
     ctx = p.chromium.launch_persistent_context("profile", headless=False)
-    page = ctx.pages[0] if ctx.pages else ctx.new_page()
+    saved: dict[str, str] = {}  # content-hash -> filename already written
 
-    page.goto("https://www.phoenix.edu/")          # adjust to the real portal entry URL
-    input("LOGGED-OUT login page is showing? Enter to save login_page.html… ")
-    (OUT / "login_page.html").write_text(page.content(), encoding="utf-8")
+    def active_page():
+        """The tab the operator is actually viewing — re-resolved on every save.
 
-    input("Now LOG IN by hand and navigate to the discussions list. Enter to save… ")
-    (OUT / "discussions_list.html").write_text(page.content(), encoding="utf-8")
+        Prefer a non-hidden tab (a background tab reports visibilityState 'hidden' even
+        while the terminal holds OS focus), newest first. This is what stops the stale
+        `ctx.pages[0]` from silently capturing Home three times.
+        """
+        pages = [pg for pg in ctx.pages if not pg.is_closed()]
+        visible = []
+        for pg in pages:
+            try:
+                if pg.evaluate("document.visibilityState") == "visible":
+                    visible.append(pg)
+            except Exception:
+                pass  # a navigating/closing tab can't be evaluated; skip it
+        candidates = visible or pages
+        return candidates[-1] if candidates else ctx.new_page()
 
-    input("Open ONE discussion (the prompt is visible). Enter to save… ")
-    (OUT / "discussion_page.html").write_text(page.content(), encoding="utf-8")
+    def save(name, prompt):
+        """Prompt, capture the active tab — but refuse a byte-identical repeat."""
+        while True:
+            input(prompt)
+            page = active_page()
+            html = page.content()
+            print(f"  -> {page.title()!r}  {page.url}")
+            digest = hashlib.sha256(html.encode("utf-8")).hexdigest()
+            if digest in saved:
+                print(f"  !! byte-identical to {saved[digest]} — you're still on the same "
+                      "page (navigate to the right view, or the helper read the wrong "
+                      "tab). Enter to retry, or type 'force' to save anyway.")
+                if input("  retry/force> ").strip().lower() != "force":
+                    continue
+            (OUT / name).write_text(html, encoding="utf-8")
+            saved[digest] = name
+            print(f"  saved {name} ({len(html):,} bytes)")
+            return
 
-    input("Open/scroll to the REPLY form on that discussion. Enter to save… ")
-    (OUT / "reply_form.html").write_text(page.content(), encoding="utf-8")
+    start = ctx.pages[0] if ctx.pages else ctx.new_page()
+    start.goto("https://www.phoenix.edu/")  # adjust to the real portal entry URL if needed
+
+    save("login_page.html",
+         "LOGGED-OUT login page is showing? Enter to save login_page.html… ")
+    save("discussions_list.html",
+         "LOG IN by hand and navigate to the discussions list. Enter to save… ")
+    save("discussion_page.html",
+         "Open ONE discussion (the prompt is visible). Enter to save… ")
+    save("reply_form.html",
+         "Open/scroll to the REPLY form on that discussion. Enter to save… ")
 
     ctx.close()
 ```
+
+Watch the `-> '<title>'  <url>` line each save prints: if it says `'Home'` (the
+`my.phoenix.edu` dashboard) when you meant the discussions list, you're on the wrong tab —
+navigate to the right view and let the identical-page guard re-prompt you.
 
 You should now have, committed under `fixtures/`:
 - [ ] `login_page.html` (logged-out)
