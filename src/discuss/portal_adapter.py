@@ -93,8 +93,18 @@ DUE_DATE_FORMAT = "%m/%d/%y, %I:%M %p"
 
 # Login-page marker for portal_parse.is_login_page (T006, FR-003). The logged-out page is
 # on www.phoenix.edu and carries this exact <title>; the logged-in portal is on
-# vle.phoenix.edu (no password field). Confirmed against login_page.html.
+# vle.phoenix.edu (no password field). Confirmed against login_page.html. This marker is
+# only present POST-render, so it alone misses the pre-render shell below (Esc#2).
 LOGIN_PAGE_MARKER = "University of Phoenix Login"
+
+# Pre-render login-shell markers (Esc#2). The live IdP is a client-rendered ForgeRock/Vue
+# SPA; navigated to pre-render it is a 1.6 KB shell carrying NONE of LOGIN_PAGE_MARKER
+# (which only appears once the SPA paints) but two stable shell markers: the `<title>Login</title>`
+# and ForgeRock's `data-testid="fr-body-image"` on <body>. Keyed TOGETHER (both required) so a
+# page that merely has a "Login" title cannot false-positive. Captured verbatim in
+# fixtures/login_shell_prerender.html (the FR-018 self-snapshot from the first live run).
+LOGIN_SHELL_TITLE_MARKER = "<title>Login</title>"
+LOGIN_SHELL_BODY_MARKER = 'data-testid="fr-body-image"'
 
 # The discussions area for a class. `class_link` is empty (the start-from-homepage click
 # is not used); we navigate directly to the engagement area, the stem every discussion row

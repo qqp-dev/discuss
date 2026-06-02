@@ -47,6 +47,14 @@ def discussion_page_fixture_html() -> str:
     return _read("discussion_page.html")
 
 
+@pytest.fixture
+def login_shell_prerender_html() -> str:
+    """The PRE-RENDER ForgeRock SSO login shell (Esc#2): captured by FR-018 self-snapshot on
+    the first live run, the 1.6 KB un-painted Vue shell the live adapter actually reads —
+    `<title>Login</title>` + `data-testid="fr-body-image"`, no post-render marker."""
+    return _read("login_shell_prerender.html")
+
+
 # --- URLs that accompany those captures (is_login_page takes both url and html) ---
 
 

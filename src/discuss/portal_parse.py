@@ -23,6 +23,8 @@ from discuss.portal_adapter import (
     DUE_DATE_CELL_SEL,
     DUE_DATE_FORMAT,
     LOGIN_PAGE_MARKER,
+    LOGIN_SHELL_BODY_MARKER,
+    LOGIN_SHELL_TITLE_MARKER,
     PROMPT_CONTAINER_SEL,
 )
 
@@ -162,13 +164,36 @@ def extract_prompt_text(html: str, *, container_selector: str = PROMPT_CONTAINER
 
 
 def is_login_page(url: str, html: str) -> bool:
-    """True iff the page is the logged-out login screen (FR-003).
+    """True iff the page is the login screen — post-render OR pre-render shell (FR-003, Esc#2).
 
-    Pure decision so it is unit-testable off saved HTML. Keys off the recorded login-page
-    marker in the page body, with a URL fallback so a login redirect that has not yet
-    rendered its body is still recognised. ``browser.ensure_logged_in`` uses this to pause
-    and prompt for *manual* login — the tool never automates credentials.
+    Pure decision so it is unit-testable off saved HTML. Recognises three signals, any one
+    sufficient: (1) the POST-render ``LOGIN_PAGE_MARKER``; (2) the PRE-render ForgeRock SSO
+    shell, keyed on its title AND body markers TOGETHER (the live adapter reads the DOM
+    before the SPA paints, so the post-render marker is absent — Esc#2's exact failure); (3)
+    a ``/login`` URL fallback. ``browser.ensure_logged_in`` uses this to pause and prompt for
+    *manual* login — the tool never automates credentials.
     """
-    if LOGIN_PAGE_MARKER and LOGIN_PAGE_MARKER in (html or ""):
+    h = html or ""
+    if LOGIN_PAGE_MARKER and LOGIN_PAGE_MARKER in h:
+        return True
+    if LOGIN_SHELL_TITLE_MARKER in h and LOGIN_SHELL_BODY_MARKER in h:
         return True
     return "/login" in (url or "").lower()
+
+
+def classify_landing(url: str, html: str) -> str:
+    """Classify a post-navigation landing as ``"discussions"`` | ``"login"`` | ``"unknown"``.
+
+    Esc#2 corrective (FR-003/FR-018): after the live adapter waits for render, the caller
+    must branch on what it actually landed on — a rendered discussions list (proceed), a
+    login redirect (pause for manual login, FR-003), or genuinely unrecognised markup (a real
+    selector miss, distinct from a login bounce so the FR-018 diagnostic stays honest).
+
+    Pure over the (url, html) pair. Checks for rendered discussion rows FIRST so a real list
+    is never misread as login/unknown; falls to the login predicate; else ``"unknown"``.
+    """
+    if HTMLParser(html or "").css_first(DISCUSSION_ROWS_SEL) is not None:
+        return "discussions"
+    if is_login_page(url, html):
+        return "login"
+    return "unknown"
