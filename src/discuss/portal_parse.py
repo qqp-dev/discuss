@@ -22,6 +22,7 @@ from discuss.portal_adapter import (
     DISCUSSION_ROWS_SEL,
     DUE_DATE_CELL_SEL,
     DUE_DATE_FORMAT,
+    PROMPT_CONTAINER_SEL,
 )
 
 _TAG_RE = re.compile(r"<[^>]+>")
@@ -143,3 +144,17 @@ def select_soonest_due(items, today: dt.date):
     if not upcoming:
         return None
     return min(upcoming, key=lambda i: i.due_date)
+
+
+def extract_prompt_text(html: str, *, container_selector: str = PROMPT_CONTAINER_SEL) -> str:
+    """Return the discussion's instructor prompt as normalized plaintext (FR-006).
+
+    Pure over the HTML string. Takes the FIRST matching container — the portal reuses the
+    prompt container id on every read-only post, so first-match is the instructor prompt
+    and anything later is a student reply. Returns "" when the container is absent so the
+    caller can treat an empty extraction as a failure rather than crashing on a None node.
+    """
+    node = HTMLParser(html).css_first(container_selector)
+    if node is None:
+        return ""
+    return collapse_whitespace(node.text(separator=" "))

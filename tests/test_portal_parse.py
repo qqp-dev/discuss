@@ -1,6 +1,7 @@
 import datetime as dt
 
 from discuss.portal_parse import (
+    extract_prompt_text,
     parse_discussions,
     select_soonest_due,
     verify_fill_readback,
@@ -120,3 +121,27 @@ def test_parse_discussions_robust_to_bad_and_linkless_rows():
     items = parse_discussions(html)
     assert [i.title for i in items] == ["Empty Due", "Bogus Due"]  # linkless row dropped
     assert all(i.due_date is None for i in items)  # empty + unparseable both → None
+
+
+# --- T011: prompt extraction (FR-006) ---
+
+
+def test_extract_prompt_text_from_fixture(discussion_page_fixture_html):
+    # FR-006: the instructor prompt is returned as normalized plaintext from the FIRST
+    # prompt container (the #bb-editor-textbox id is reused by every read-only post, so a
+    # selector that grabbed the last/all matches would return the wrong text or a concat).
+    text = extract_prompt_text(discussion_page_fixture_html)
+    assert "Please take a moment and share a few facts about yourself" in text
+    assert "<" not in text  # markup stripped
+
+
+def test_extract_prompt_text_collapses_whitespace(discussion_page_fixture_html):
+    # FR-006: plaintext is normalized — no doubled spaces or stray newlines leak through.
+    text = extract_prompt_text(discussion_page_fixture_html)
+    assert "  " not in text and "\n" not in text
+
+
+def test_extract_prompt_text_missing_container_returns_empty():
+    # edge: a page with no prompt container yields "" (caller treats empty as a failure),
+    # rather than crashing on a None node.
+    assert extract_prompt_text("<html><body><p>no prompt here</p></body></html>") == ""
