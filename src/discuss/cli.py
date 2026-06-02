@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import datetime as dt
 import os
+import sys
 from pathlib import Path
 
 from discuss import browser, handoff, portal_adapter
@@ -21,6 +22,18 @@ from discuss.errors import DiscussError, FillVerifyFailed, NoUpcomingDiscussion,
 from discuss.portal_parse import select_soonest_due
 
 _FALSEY = {"0", "false", "no", "off"}
+
+# Operator guidance when no target class is configured — shared by the pipeline and the
+# `validate` subcommand so the one fail-loud message lives in a single place.
+_NO_CLASS_MESSAGE = (
+    "discuss: no target class configured. Set DISCUSS_TARGET_CLASSES to one or more "
+    "class ids,\n  e.g.  DISCUSS_TARGET_CLASSES=_577963_1 discuss\n"
+    "  (find the id in the course URL: .../ultra/courses/<class_id>/...)."
+)
+
+# The placeholder reply `discuss validate` injects so the operator can eyeball that the
+# fill lands in the right field and renders — it is never submitted (FR-010).
+_VALIDATE_SAMPLE = "discuss validate — sample reply (this is NOT submitted)."
 
 
 def _confirm_via_input(prompt: str) -> bool:
@@ -132,15 +145,96 @@ def run(
     )
 
 
-def main() -> int:
-    """Console entry: build the real dependencies and delegate to ``run`` (FR-001)."""
-    config = Config.load(_load_overrides())
-    if not config.target_classes:
-        print(
-            "discuss: no target class configured. Set DISCUSS_TARGET_CLASSES to one or more "
-            "class ids,\n  e.g.  DISCUSS_TARGET_CLASSES=_577963_1 discuss\n"
-            "  (find the id in the course URL: .../ultra/courses/<class_id>/...)."
+def validate(
+    page,
+    *,
+    adapter,
+    confirm=_confirm_via_input,
+    fixtures_dir=Path("fixtures"),
+    class_id: str = "",
+    today: dt.date | None = None,
+    announce=print,
+) -> int:
+    """Guided live-check: drive each live step on ``page`` and gate it on a single-keypress
+    operator confirmation (FR-017). On a ``SelectorMiss`` the tool snapshots the live DOM to
+    ``fixtures_dir/<step>_live.html`` itself (FR-018), names ``portal_adapter.py`` as the
+    one-file fix, and stops — the operator never hand-captures markup. Nothing is submitted.
+
+    Returns 0 when every checkpoint is confirmed, 1 when a checkpoint is declined or nothing
+    is upcoming, 3 on a selector miss (a snapshot was written). The ``adapter``/``confirm``/
+    ``announce`` seams are injected so the flow logic is unit-testable with fakes; the live
+    page-recognition residue is T026.
+    """
+    if today is None:
+        today = dt.date.today()
+    step = "navigate"
+    try:
+        adapter.go_to_discussions(page, class_id)
+        step = "list"
+        selected = select_soonest_due(adapter.list_discussions(page), today)
+        if selected is None:
+            announce("Guided validation: no upcoming discussion to validate — nothing to check.")
+            return 1
+        if not confirm(f"Found {selected.title!r} due {selected.due_date} — correct? [y] "):
+            announce("Guided validation stopped: selection not confirmed.")
+            return 1
+        step = "extract"
+        adapter.open_discussion(page, selected)
+        prompt = adapter.extract_prompt(page)
+        if not confirm(f"Extracted the prompt ({len(prompt)} chars) — looks right? [y] "):
+            announce("Guided validation stopped: prompt not confirmed.")
+            return 1
+        step = "fill"
+        adapter.fill_reply(page, _VALIDATE_SAMPLE)
+        if not confirm("Filled the reply field — your text shows, nothing submitted? [y] "):
+            announce("Guided validation stopped: fill not confirmed.")
+            return 1
+    except SelectorMiss as exc:
+        snapshot = Path(fixtures_dir) / f"{step}_live.html"
+        # FR-018: the tool must capture the live markup ITSELF — create the fixtures dir if
+        # it is absent (fresh checkout / CWD without fixtures/) so the snapshot never turns
+        # into a traceback instead of a capture.
+        snapshot.parent.mkdir(parents=True, exist_ok=True)
+        snapshot.write_text(page.content(), encoding="utf-8")
+        announce(
+            f"Selector miss at the {step!r} step: {exc}\n"
+            f"Saved the live page markup to {snapshot} for re-capture. Fix the selector in "
+            "src/discuss/portal_adapter.py — the one-file home for every portal selector."
         )
+        return 3
+    announce("Guided validation complete — every checkpoint confirmed; nothing was submitted.")
+    return 0
+
+
+def _run_validate(config: Config) -> int:
+    """Wire the real live dependencies for ``discuss validate`` (FR-017): open the operator's
+    persistent context, pause for manual login, then run the guided walk against the real
+    adapter. Fails loud (rc 2) with guidance when no class is configured, before any browser
+    is opened."""
+    if not config.target_classes:
+        print(_NO_CLASS_MESSAGE)
+        return 2
+    _context, page = browser.open_persistent_context(config.profile_dir)
+    browser.ensure_logged_in(page)
+    return validate(
+        page,
+        adapter=portal_adapter,
+        class_id=config.target_classes[0],
+        today=dt.date.today(),
+    )
+
+
+def main(argv=None) -> int:
+    """Console entry: dispatch ``discuss validate`` to the guided check, else build the real
+    dependencies and delegate to ``run`` (FR-001)."""
+    args = sys.argv[1:] if argv is None else list(argv)
+    config = Config.load(_load_overrides())
+
+    if args and args[0] == "validate":
+        return _run_validate(config)
+
+    if not config.target_classes:
+        print(_NO_CLASS_MESSAGE)
         return 2
 
     def browser_factory():
