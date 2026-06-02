@@ -16,10 +16,17 @@ portal during build. This file is also the **re-verification checklist** — re-
 ## 0. Prerequisites
 
 ```bash
-# from the project root, with the project venv active (or use its bin on PATH)
+# from the project root — create and activate a virtualenv first. (A bare `pip install`
+# hits PEP-668 "externally-managed-environment" on Debian's system Python; a venv avoids
+# that and pins one interpreter, since this box has both Debian 3.12 and linuxbrew 3.14.)
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -e '.[dev]'
 python -m playwright install chromium      # one-time: download the browser binary
 ```
+
+> All later commands in this file assume that venv is active (or use `.venv/bin/python`,
+> `.venv/bin/pytest`, `.venv/bin/discuss` explicitly).
 
 Decide a persistent profile dir (default `profile/`, gitignored). The browser reuses your
 own human-authenticated session — **no credentials are ever stored** (FR-002, P-I).
