@@ -12,16 +12,49 @@ implementations and is verified end-to-end live in T019.
 from __future__ import annotations
 
 import datetime as dt
+import os
+from pathlib import Path
 
 from discuss import browser, handoff, portal_adapter
 from discuss.config import Config
 from discuss.errors import DiscussError, FillVerifyFailed, NoUpcomingDiscussion, SelectorMiss
 from discuss.portal_parse import select_soonest_due
 
+_FALSEY = {"0", "false", "no", "off"}
+
 
 def _confirm_via_input(prompt: str) -> bool:
     """Default confirmation gate: ask the operator and accept only an explicit yes."""
     return input(prompt).strip().lower() in ("y", "yes")
+
+
+def _load_overrides(env=os.environ) -> dict:
+    """Gather config overrides from the environment (config.py delegates this to cli).
+
+    Recognised vars (each absent → no key, so the documented default wins):
+      DISCUSS_TARGET_CLASSES  comma-separated class ids (e.g. ``_577963_1,_x_2``)
+      DISCUSS_EDITOR          a ``--wait``-style editor command (space-separated)
+      DISCUSS_PROFILE_DIR     persistent browser profile dir
+      DISCUSS_RUN_ROOT        parent dir for per-run working dirs
+      DISCUSS_CONFIRM         set to a falsey value (0/false/no/off) to disable the gate
+    """
+    overrides: dict = {}
+    classes = env.get("DISCUSS_TARGET_CLASSES", "").strip()
+    if classes:
+        overrides["target_classes"] = [c.strip() for c in classes.split(",") if c.strip()]
+    editor = env.get("DISCUSS_EDITOR", "").strip()
+    if editor:
+        overrides["editor_cmd"] = editor.split()
+    profile = env.get("DISCUSS_PROFILE_DIR", "").strip()
+    if profile:
+        overrides["profile_dir"] = Path(profile)
+    run_root = env.get("DISCUSS_RUN_ROOT", "").strip()
+    if run_root:
+        overrides["run_root"] = Path(run_root)
+    confirm = env.get("DISCUSS_CONFIRM", "").strip()
+    if confirm:
+        overrides["confirm"] = confirm.lower() not in _FALSEY
+    return overrides
 
 
 def run(
@@ -101,7 +134,14 @@ def run(
 
 def main() -> int:
     """Console entry: build the real dependencies and delegate to ``run`` (FR-001)."""
-    config = Config.load()
+    config = Config.load(_load_overrides())
+    if not config.target_classes:
+        print(
+            "discuss: no target class configured. Set DISCUSS_TARGET_CLASSES to one or more "
+            "class ids,\n  e.g.  DISCUSS_TARGET_CLASSES=_577963_1 discuss\n"
+            "  (find the id in the course URL: .../ultra/courses/<class_id>/...)."
+        )
+        return 2
 
     def browser_factory():
         return browser.open_persistent_context(config.profile_dir)

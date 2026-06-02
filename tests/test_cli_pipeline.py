@@ -102,9 +102,53 @@ def test_happy_path_reports_discussion_title(fake_ctx):
     assert fake_ctx.selected.title in fake_ctx.last_message
 
 
+def test_load_overrides_parses_env():
+    # FR-005/Q4: cli gathers config from env into the overrides dict (config.py delegates
+    # this gathering to the orchestrator). Comma-split classes, space-split editor, and an
+    # explicit confirm-off are all parsed; absent vars contribute no key (defaults win).
+    from pathlib import Path
+
+    env = {
+        "DISCUSS_TARGET_CLASSES": " _577963_1 , _x_2 ",
+        "DISCUSS_EDITOR": "nano",
+        "DISCUSS_CONFIRM": "false",
+        "DISCUSS_PROFILE_DIR": "/tmp/p",
+        "DISCUSS_RUN_ROOT": "/tmp/r",
+    }
+    ov = cli._load_overrides(env)
+    assert ov["target_classes"] == ["_577963_1", "_x_2"]
+    assert ov["editor_cmd"] == ["nano"]
+    assert ov["confirm"] is False
+    assert ov["profile_dir"] == Path("/tmp/p")
+    assert ov["run_root"] == Path("/tmp/r")
+    assert cli._load_overrides({}) == {}  # nothing set → no overrides, all defaults win
+
+
+def test_confirm_truthy_env_enables_gate():
+    # DISCUSS_CONFIRM with a non-falsey value keeps the gate ON.
+    assert cli._load_overrides({"DISCUSS_CONFIRM": "1"})["confirm"] is True
+
+
+def test_main_without_target_class_fails_loud(monkeypatch, capsys):
+    # FR-014: with no class configured, main must fail LOUD with guidance and a non-zero
+    # exit — never crash with an IndexError, and never reach run().
+    monkeypatch.delenv("DISCUSS_TARGET_CLASSES", raising=False)
+    monkeypatch.setattr(cli, "_load_overrides", lambda env=None: {})
+
+    def must_not_run(**kwargs):
+        raise AssertionError("run() must not be called when no class is configured")
+
+    monkeypatch.setattr(cli, "run", must_not_run)
+    rc = cli.main()
+    assert rc != 0
+    out = capsys.readouterr().out.lower()
+    assert "discuss_target_classes" in out  # the env var the operator must set
+
+
 def test_main_wires_run_and_returns_zero(monkeypatch, tmp_path):
     # FR-001: the console entry builds real deps and delegates to run(), returning 0 on
     # success. run() itself is stubbed so no browser/portal is touched here.
+    monkeypatch.setenv("DISCUSS_TARGET_CLASSES", "_x_1")
     calls = {}
 
     def fake_run(**kwargs):
@@ -116,6 +160,7 @@ def test_main_wires_run_and_returns_zero(monkeypatch, tmp_path):
     assert calls["adapter"] is cli.portal_adapter
     assert callable(calls["browser_factory"])
     assert isinstance(calls["today"], dt.date)
+    assert calls["config"].target_classes == ["_x_1"]  # env flowed into the config
 
     # the built browser_factory must open the PERSISTENT context (no creds) — exercise it
     # with the live call stubbed so it touches no real browser.
@@ -143,6 +188,8 @@ def test_confirm_via_input_accepts_only_explicit_yes(monkeypatch):
 def test_main_reports_discuss_error_and_returns_one(monkeypatch):
     # FR-014: a fail-loud DiscussError from the pipeline is reported to the operator and
     # surfaces as a non-zero exit, not a traceback.
+    monkeypatch.setenv("DISCUSS_TARGET_CLASSES", "_x_1")
+
     def fake_run(**kwargs):
         raise NoUpcomingDiscussion("no discussion has an upcoming due date")
 

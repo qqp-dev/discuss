@@ -52,19 +52,22 @@ holds *your* session — it never sees a password. Establish that session once:
 
 No credential is ever read from or written to disk by the tool (FR-002).
 
-## Configure the editor
+## Configure (environment variables)
 
-When it's time to edit your draft, the tool opens it in a GUI editor and **blocks** until
-you save and close — so the editor command must wait. The default is:
+`discuss` reads its configuration from the environment (each var is optional except the
+target class):
 
-```
-code --wait
-```
+| Variable | Meaning | Default |
+|---|---|---|
+| `DISCUSS_TARGET_CLASSES` | **required** — comma-separated class id(s) to search. Find the id in the course URL: `.../ultra/courses/<class_id>/...` | (none — run aborts with guidance if unset) |
+| `DISCUSS_EDITOR` | the `--wait`-style GUI editor command for editing the draft (must block until you close it) | `code --wait` |
+| `DISCUSS_PROFILE_DIR` | persistent browser profile dir (holds your session; no credentials) | `profile/` |
+| `DISCUSS_RUN_ROOT` | parent dir for per-run working dirs | `runs/` |
+| `DISCUSS_CONFIRM` | set to `0`/`false`/`no`/`off` to disable the pre-extraction confirmation gate | gate **on** |
 
-(VS Code, blocking). To use another editor, set the `editor_cmd` config to a `--wait`-style
-command, e.g. `["gedit"]` (gedit blocks until the window closes) or
-`["gnome-text-editor", "--standalone"]`. The command is passed to the drafting session via
-the `DISCUSS_EDITOR` environment variable.
+The editor must **block** until you save and close (the default `code --wait` is VS Code).
+If VS Code isn't installed, use a terminal editor that blocks (`DISCUSS_EDITOR=nano`) or a
+GUI one (`DISCUSS_EDITOR='gnome-text-editor --standalone'`).
 
 ## Run it
 
@@ -80,7 +83,10 @@ Either:
   inside it. The `discuss` script must be on the PATH of your desktop session (point the
   launcher at the venv, or add the venv `bin` to your session PATH).
 
-- **Terminal:** just run `discuss` (with the venv active).
+- **Terminal:** with the venv active, run with at least the target class set:
+  ```bash
+  DISCUSS_TARGET_CLASSES=_577963_1 DISCUSS_EDITOR=nano discuss
+  ```
 
 ### What a run looks like
 
