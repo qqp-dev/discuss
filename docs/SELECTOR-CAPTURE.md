@@ -50,7 +50,16 @@ import hashlib
 import sys
 from pathlib import Path
 
-from playwright.sync_api import sync_playwright
+try:
+    from playwright.sync_api import sync_playwright
+except ModuleNotFoundError:  # wrong interpreter — usually a stale activated venv shadows it
+    _venv = Path(__file__).resolve().parent / ".venv" / "bin" / "python"
+    sys.exit(
+        f"playwright is not installed in this interpreter ({sys.executable}).\n"
+        "You're probably running a different python than the project venv (an activated\n"
+        "venv from elsewhere shadows a bare `python`). Re-run naming the venv explicitly:\n"
+        f"    {_venv} {Path(__file__).name}"
+    )
 
 # Refuse to run anywhere but the project root, so fixtures never again land somewhere
 # stray (a CWD-relative OUT is how an earlier run wrote four files onto the Desktop).
