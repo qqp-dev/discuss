@@ -8,10 +8,15 @@ portal during build. This file is also the **re-verification checklist** — re-
 "Verify" section after any portal change; a markup change is a one-file fix in
 `src/discuss/portal_adapter.py`.
 
-> **Status:** the checklist and the `SELECTORS` scaffold were prepared by the build. The
-> capture itself (steps below) is pending — do it once, fill the values, commit the
-> fixtures, then check T002 off in `tasks.md`. Nothing in the live pipeline (T006,
-> T010–T013, T015–T017, T019) can be completed until this is done.
+> **Status:** capture **done** (T002). The four fixtures are committed under `fixtures/`,
+> `SELECTORS` + `DUE_DATE_FORMAT` + `LOGIN_PAGE_MARKER` are filled in
+> `src/discuss/portal_adapter.py`, and the selectors were validated against the saved
+> fixtures via the real selector engine (7 discussion rows, 5 dated; prompt = first
+> `#bb-editor-textbox`; login marker confirmed). This file is now the **re-verification
+> checklist**: re-run the "Verify" section (§3) against the live portal after any portal
+> change — a markup change is a one-file fix in `portal_adapter.py`. The live story-level
+> checks (T009 session, T013 discover/extract, T016 fill, T019 end-to-end + login-pause)
+> are the remaining operator runs against the real portal.
 
 ## 0. Prerequisites
 
