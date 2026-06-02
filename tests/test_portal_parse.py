@@ -2,6 +2,7 @@ import datetime as dt
 
 from discuss.portal_parse import (
     extract_prompt_text,
+    is_login_page,
     parse_discussions,
     select_soonest_due,
     verify_fill_readback,
@@ -145,3 +146,22 @@ def test_extract_prompt_text_missing_container_returns_empty():
     # edge: a page with no prompt container yields "" (caller treats empty as a failure),
     # rather than crashing on a None node.
     assert extract_prompt_text("<html><body><p>no prompt here</p></body></html>") == ""
+
+
+# --- T006: login-page predicate (FR-003) ---
+
+
+def test_login_page_detected_by_marker(login_fixture_html, login_url):
+    # FR-003: recognise the login screen so we can pause for manual login.
+    assert is_login_page(login_url, login_fixture_html) is True
+
+
+def test_authenticated_page_not_login(discussions_fixture_html, discussions_url):
+    # FR-003: an authenticated portal page is NOT the login screen (no false pause).
+    assert is_login_page(discussions_url, discussions_fixture_html) is False
+
+
+def test_login_page_detected_by_url_when_marker_absent():
+    # FR-003: a login redirect can show a /login URL before its body (and the marker)
+    # renders; the URL signal alone still pauses for manual login.
+    assert is_login_page("https://www.phoenix.edu/login", "<html><body>…</body></html>") is True

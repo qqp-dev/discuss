@@ -22,6 +22,7 @@ from discuss.portal_adapter import (
     DISCUSSION_ROWS_SEL,
     DUE_DATE_CELL_SEL,
     DUE_DATE_FORMAT,
+    LOGIN_PAGE_MARKER,
     PROMPT_CONTAINER_SEL,
 )
 
@@ -158,3 +159,16 @@ def extract_prompt_text(html: str, *, container_selector: str = PROMPT_CONTAINER
     if node is None:
         return ""
     return collapse_whitespace(node.text(separator=" "))
+
+
+def is_login_page(url: str, html: str) -> bool:
+    """True iff the page is the logged-out login screen (FR-003).
+
+    Pure decision so it is unit-testable off saved HTML. Keys off the recorded login-page
+    marker in the page body, with a URL fallback so a login redirect that has not yet
+    rendered its body is still recognised. ``browser.ensure_logged_in`` uses this to pause
+    and prompt for *manual* login — the tool never automates credentials.
+    """
+    if LOGIN_PAGE_MARKER and LOGIN_PAGE_MARKER in (html or ""):
+        return True
+    return "/login" in (url or "").lower()
