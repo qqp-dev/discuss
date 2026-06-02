@@ -8,15 +8,16 @@ automating in CI. It is verified by the operator checklist in `docs/SELECTOR-CAP
 not by unit tests. All PURE parsing/selection logic lives in `portal_parse.py` (which is
 NOT exempt and is covered by saved-HTML fixtures).
 
-Build status: T002 seeds the SELECTORS below from a *live capture* — the values are
-placeholders until the operator records them (see docs/SELECTOR-CAPTURE.md). The live
-navigate/extract methods are added in T012; the runtime-typed `fill_reply` in T015. None
-of the live tasks can run until SELECTORS and DUE_DATE_FORMAT are filled.
+Build status: SELECTORS + DUE_DATE_FORMAT are filled from the live capture (T002,
+docs/SELECTOR-CAPTURE.md) and validated against the saved fixtures via the real selector
+engine. The live navigate/extract methods (T012) and the runtime-typed `fill_reply`
+(T015) are implemented here; their live behaviour is verified by the operator checklist
+(T013/T016/T019), not by unit tests.
 """
 
 from __future__ import annotations
 
-from discuss.errors import SelectorMiss
+from discuss.errors import FillVerifyFailed, SelectorMiss
 
 # ---------------------------------------------------------------------------------------
 # SELECTORS — captured from a LIVE portal session (docs/SELECTOR-CAPTURE.md, task T002).
@@ -157,3 +158,51 @@ def extract_prompt(page) -> str:
             f"prompt text was empty (container {PROMPT_CONTAINER_SEL!r} missing or blank)"
         )
     return text
+
+
+def fill_reply(page, text: str) -> None:
+    """Inject ``text`` into the reply field and verify the read-back — never submit (T015).
+
+    [COVERAGE-EXEMPT] Live Playwright; the read-back *decision* is the unit-tested pure
+    ``verify_fill_readback`` (T014), and the no-submit / rendered-equals-response guarantees
+    are verified by the operator checklist (T016). Steps, per FR-010/FR-011/FR-012:
+
+    1. Locate the reply field by the captured selector; absent → ``SelectorMiss`` (raise,
+       never guess — FR-011).
+    2. **Detect the field type at runtime** (do NOT hard-code it): a ``<textarea>``/``<input>``
+       is filled with ``fill()``; a contenteditable rich-text body (the Quill editor) is
+       focused, cleared, and typed into via the keyboard. A field that is neither aborts.
+    3. Read the rendered content back and check it with ``verify_fill_readback``; a mismatch
+       (partial/garbled paste) → ``FillVerifyFailed``.
+    4. **Never** locate or click a submit/post control — there is deliberately no such
+       lookup anywhere in this function. On any raise the caller preserves ``response.md``
+       and tells the operator to paste manually (FR-012/FR-015).
+    """
+    from discuss.portal_parse import verify_fill_readback
+
+    field = page.query_selector(REPLY_FIELD_SEL)
+    if field is None:
+        raise SelectorMiss(f"reply field not found (selector {REPLY_FIELD_SEL!r})")
+
+    tag = (field.evaluate("el => el.tagName") or "").lower()
+    is_contenteditable = bool(field.evaluate("el => el.isContentEditable"))
+
+    if tag in ("textarea", "input"):
+        field.fill(text)  # fill() replaces existing content
+        actual = field.input_value()
+    elif is_contenteditable:
+        field.click()  # focus the editable body
+        page.keyboard.press("Control+A")  # clear any existing content before typing
+        page.keyboard.press("Delete")
+        page.keyboard.insert_text(text)
+        actual = field.inner_text()
+    else:
+        # Located, but neither a textarea nor contenteditable — we cannot type into it
+        # safely, so abort (write-back is preserved by the caller) rather than guess.
+        raise FillVerifyFailed(
+            f"reply field type is undetectable (tag={tag!r}, contenteditable=False); "
+            "aborting write-back"
+        )
+
+    if not verify_fill_readback(text, actual):
+        raise FillVerifyFailed("reply field read-back did not match the intended response")
