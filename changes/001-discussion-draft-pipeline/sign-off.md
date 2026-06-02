@@ -7,13 +7,21 @@ phase: handoff
 
 # Sign-off: `discussion-draft-pipeline`
 
-**Status:** Draft (post-Escalation #1 triage)
+**Status:** Draft (post-Escalation #1 triage; G1-cleared at bounce #1)
 **Date:** 2026-06-02
 
 > The operator's decision ledger — the sign-off surface at handoff, presented *instead of*
 > the full `spec.md`. The four sections below are the only things you must accept. Design
 > accrues; the operator signs (`sign-off.sh --feature 001-discussion-draft-pipeline` or a
 > hand-edit). Design never stamps its own signature.
+
+> **Revision note (G1 bounce #1, 2026-06-02):** the independent G1 panel BLOCKed the first
+> triage draft and design fixed it — two safety oracles (no-submit, no-creds) were rewritten
+> to scan *code, not the safety prose they false-RED'd on*, and two criteria (login-pause
+> FR-003, no-retry FR-016) gained real offline tests (new task T027). **No binding choice,
+> assumption, no-oracle admission, or scope below changed** — the decisions are exactly what
+> you reviewed; this re-signature binds them to the corrected artifacts. The panel then
+> re-cleared testability + completeness; scope + sign-off-faithfulness were unaffected.
 
 ## Binding Choices
 
