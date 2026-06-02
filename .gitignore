@@ -6,5 +6,6 @@ venv/
 .pytest_cache/
 profile/
 runs/
+scratch_capture.py
 htmlcov/
 .coverage
