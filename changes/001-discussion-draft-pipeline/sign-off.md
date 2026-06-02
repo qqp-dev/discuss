@@ -98,4 +98,4 @@ phase: handoff
 status: SIGNED
 operator: abacus-git
 signed_at: 2026-06-02
-artifacts_hash: d5bc580c0362d40017d36a00c9461fe37cf6af146bfdffc034d46ed448095fce
+artifacts_hash: 68e15616115b333a7b8a498d4799abe29989caa0a78ec4d5c3054101c7dcb4e3
