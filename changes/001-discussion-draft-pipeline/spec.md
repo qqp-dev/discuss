@@ -217,6 +217,17 @@ live portal, ending with the reply field filled and unsubmitted on the correct d
   never lost if any downstream step fails.
 - **FR-016**: A run MUST operate at human pace and touch the minimum number of pages
   required by the fixed click-path (Respectful-guest, Constitution P-I).
+- **FR-017**: All human-facing setup and live validation MUST be **tool-driven and
+  in-tool**: the tool itself performs each live step and the operator confirms via a
+  single keypress at the visual checkpoint. The tool MUST NOT require the operator to run
+  throwaway capture scripts, hand-save HTML fixtures, inspect the DOM in devtools, or work
+  through a separate manual checklist. The operator's only irreducible manual acts are (a)
+  logging into the portal by hand once when the tool opens the browser (P-I), and (b)
+  eyeballing and confirming a single guided validation run (`discuss validate`).
+- **FR-018**: WHEN a selector fails to match the live portal, the tool MUST snapshot the
+  current page markup to a fixture file **itself** (for re-capture and offline
+  re-verification) and report which step failed naming the adapter as the one-file fix —
+  the operator MUST NOT hand-capture markup.
 
 ### 3.2 Key Entities
 
@@ -238,6 +249,16 @@ against the live logged-in portal during build** (a setup/verification task — 
 hence FR-011's runtime detection. This assumption is the project's top break risk; it is
 contained by FR-013 (one adapter module) and re-verified whenever the portal changes.
 
+**Offline oracles retire "our code is wrong"; they do not retire "the live portal
+drifted."** Driving the real adapter against the captured fixtures (via `file://`) proves
+our field-type detection, read-back, and no-submit *logic* is correct against the markup
+we captured — and the structural tests prove no submit/credential path exists in any
+build. What no offline test can prove is that today's captured selectors still match the
+*live* portal, or that the *real* logged-out page still triggers the login pause; that
+residue is irreducibly live. The method's failure in Escalation #1 was to let that residue
+hide behind `[no-oracle]` green and a waivable checklist. It is now surfaced as one named,
+deferred, tool-driven validation run (T026) — never silently folded into "done".
+
 ## 4. Success Criteria *(mandatory)*
 
 ### 4.1 Measurable Outcomes
@@ -252,22 +273,47 @@ contained by FR-013 (one adapter module) and re-verified whenever the portal cha
 - **SC-004**: Non-exempt modules (parsing/selection, orchestration, run-dir/handoff) meet
   the Constitution §1 coverage thresholds (line 85 / branch 75), exercised against
   saved-HTML fixtures and mocked-adapter orchestration tests.
+- **SC-005**: The operator's manual validation footprint is **zero throwaway scripts,
+  zero hand-saved fixtures, and zero devtools inspection** — validation is one tool-driven
+  `discuss validate` run gated on single-keypress confirmations (FR-017).
+- **SC-006**: A real `discuss` invocation reaches a **defined** pipeline state through the
+  genuine entry-point wiring (`Config.load → _load_overrides → run`) with only the live
+  browser/portal stubbed at the outermost boundary — i.e. the program provably *runs*; the
+  integration seam is gated by a no-mock smoke test, never by fakes of its own internals.
+- **SC-007**: No acceptance criterion encoding a **safety guarantee** (no-submit,
+  no-credentials) is waivable-into-"done": each has an automatable offline oracle, and any
+  irreducibly-live residue renders as an explicit **deferred / live-unverified** state
+  distinct from "done", never as a checked box.
 
 ### 4.2 Acceptance Criteria (EARS)
+
+> **Oracle honesty (post-Escalation #1).** Every criterion below carries an *automatable*
+> oracle. The two formerly `[no-oracle]` safety criteria (no-credentials, login-pause) and
+> the human-pace criterion now have real offline tests; no-submit gains a *structural*
+> oracle on top of the orchestrator-level one; and the reply-fill logic is exercised
+> against the captured Quill fixture via `file://` (a controlled real boundary,
+> Constitution §2). What remains irreducibly live — *do today's captured selectors still
+> match the live portal, and does the real logged-out page trigger the pause* — is **not**
+> hidden here as `[no-oracle]`; it is a single named **deferred / live-unverified** item
+> (tasks T026) validated by one smooth guided run, distinct from "done" (SC-007).
 
 ```ears
 WHEN the operator triggers a run and is authenticated, the tool SHALL select the discussion with the soonest upcoming due date. [test: test_select_soonest_due_from_fixture]
 WHEN a discussion is selected, the tool SHALL display a confirmation naming that discussion and its due date before extracting. [test: test_confirm_gate_names_discussion]
-IF the operator is not authenticated when a run starts, THEN the tool SHALL pause and prompt for manual login before proceeding. [no-oracle]
 WHEN the operator declines the confirmation gate, the tool SHALL abort the run without extracting anything. [test: test_confirm_decline_aborts]
 WHEN the operator confirms the gate, the tool SHALL write the extracted plaintext prompt to the run dir. [test: test_extracted_prompt_written]
-WHEN the primed session completes with a saved edited draft, the tool SHALL fill that text into the reply form without submitting it. [test: test_fill_does_not_submit]
-IF the reply field cannot be located or the read-back does not equal the intended text, THEN the tool SHALL abort write-back, preserve the response file, and instruct the operator to paste manually. [test: test_fill_verify_mismatch_aborts]
 IF no discussion has an upcoming due date, THEN the tool SHALL stop and report rather than select a past or arbitrary discussion. [test: test_no_upcoming_due_stops]
-WHILE a run is in progress, the tool SHALL act at human pace and SHALL NOT issue automated retry loops against the portal. [no-oracle]
-The tool SHALL store no portal credentials on disk. [no-oracle]
+WHEN the primed session completes with a saved edited draft, the tool SHALL fill that text into the reply form without submitting it. [test: test_fill_does_not_submit]
+The reply-fill code path SHALL contain no submit/post-control lookup or click. [test: test_fill_reply_has_no_submit_path]
+WHEN filling the captured reply form offline via file://, the tool SHALL detect the field type at runtime, fill it, pass read-back, and submit nothing. [test: test_fill_against_captured_reply_form]
+IF the reply field cannot be located or the read-back does not equal the intended text, THEN the tool SHALL abort write-back, preserve the response file, and instruct the operator to paste manually. [test: test_fill_verify_mismatch_aborts]
+The tool SHALL write no portal credential to disk and SHALL touch only the persistent profile directory for session state. [test: test_no_credentials_persisted]
+IF the operator is not authenticated when a run starts, THEN the tool SHALL pause and prompt for manual login before proceeding. [test: test_ensure_logged_in_pauses_on_login_page]
+WHILE a run is in progress, the tool SHALL act at human pace and SHALL NOT issue an automated retry loop on a selector miss. [test: test_no_retry_loop_on_selector_miss]
 The tool SHALL confine every portal-specific selector to a single adapter module. [test: test_selectors_confined_to_adapter]
 The tool SHALL persist the final response to disk before attempting write-back. [test: test_response_persisted_before_fill]
+WHEN discuss is invoked with a valid configuration, the tool SHALL reach a defined pipeline state through the real entry-point wiring and SHALL NOT crash in the integration seam. [test: test_main_smoke_reaches_defined_state]
+WHEN the operator runs guided validation, the tool SHALL drive each live check itself and gate it on a single-keypress operator confirmation. [test: test_guided_validation_uses_single_keypress_confirms]
 ```
 
 ## 5. Assumptions
@@ -305,3 +351,4 @@ The tool SHALL persist the final response to disk before attempting write-back. 
 | Version | Date | Author | Changes |
 |---|---|---|---|
 | 0.1 | 2026-06-01 | design agent | Initial spec. |
+| 0.2 | 2026-06-02 | design agent | Escalation #1 triage. Added FR-017 (smooth in-tool human validation), FR-018 (tool self-captures markup on selector miss); replaced the 3 waivable `[no-oracle]` safety/pace criteria with automatable offline oracles + the structural no-submit and no-creds oracles + the file:// fill oracle + the no-mock smoke oracle; added SC-005..007 (zero human busy-work, program-provably-runs, safety-not-waivable-into-done); §3.3 offline-vs-live-residue honesty note. |

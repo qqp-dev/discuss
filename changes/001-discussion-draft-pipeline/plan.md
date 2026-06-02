@@ -40,7 +40,30 @@ freedesktop `.desktop` launcher, a `--wait`-capable GUI editor.
 | Launcher | freedesktop `.desktop` entry → `launcher/launch.sh` → opens a terminal running `discuss` | The literal "click a shortcut" UX (FR-001). |
 | Pure HTML parsing | Parse saved/markup strings with `selectolax` (or `lxml`) in `portal_parse.py` | Keeps due-date parsing + selection + prompt extraction pure and unit-testable against saved fixtures (Constitution §2). |
 | Live DOM access | Playwright **locators** in `portal_adapter.py` | The live surface; exempt from coverage, verified by operator checklist. |
-| Testing | pytest; saved-HTML fixtures (parsing), mocked adapter (orchestration), operator checklist (live) | Honest oracles per Constitution §2; never mock the system under test. |
+| Testing | pytest, in four oracle layers (below) | Honest oracles per Constitution §2; never mock the system under test; **no safety criterion may have a waivable-only oracle** (Escalation #1). |
+
+**Four oracle layers (post-Escalation #1).** Each acceptance criterion is pinned by the
+*weakest-mocking* oracle that can honestly reach it:
+
+1. **Pure unit** (parsing/selection/read-back, `portal_parse.py`) — saved-HTML fixtures.
+2. **Controlled real boundary** (`portal_adapter.fill_reply`) — the **real** adapter run
+   against the captured Quill `fixtures/reply_form.html` via `file://` in a headless
+   browser: real field-type detection + read-back + zero submit risk. Constitution §2
+   names fixtures the controlled real boundary, so this is in-bounds despite the module's
+   *coverage* exemption (coverage-exempt ≠ test-exempt).
+3. **Structural** (no-submit, no-credentials) — assert *of the source itself* that
+   `fill_reply` contains no submit/post-control lookup or click, and that no code path
+   writes a credential (only the persistent profile dir is touched). A safety *absence* is
+   provable without the live portal.
+4. **No-mock seam smoke** (`main`/`run`) — drive the **real** entry-point wiring
+   (`Config.load → _load_overrides → run`) to a *defined* state with only `browser_factory`
+   stubbed at the outermost boundary. This is the layer Escalation #1 lacked: the fatal
+   `IndexError` lived in exactly the seam the orchestrator fakes replaced.
+
+The **irreducibly-live residue** (do today's captured selectors still match the live
+portal; does the real logged-out page trigger the pause) is **not** `[no-oracle]`; it is a
+single deferred, tool-driven `discuss validate` run (T026) whose state is distinct from
+"done".
 
 ## 2. Architecture Decisions
 
@@ -65,6 +88,21 @@ freedesktop `.desktop` launcher, a `--wait`-capable GUI editor.
   wrong-target; configurable off in `config.py`.
 - **Fail-loud, no retry-storm** (FR-014, P-I): typed errors name the failing step; at most
   one bounded human-paced retry on a transient load timeout.
+- **Human validation is the tool's job, not the operator's** (FR-017, Escalation #1). The
+  retired model dumped the live work on the operator: paste an 80-line throwaway capture
+  script, juggle stale browser tabs, hand-record selectors in devtools, then walk four
+  separate `SELECTOR-CAPTURE.md` checklists. The new model is a `discuss validate`
+  subcommand that *drives* the live steps itself — the operator logs in once, then presses
+  a single key at each visual checkpoint ("found discussion X due Y — correct? [y]";
+  "filled the field — your text shows, unsubmitted? [y]"). On a selector miss the tool
+  snapshots the live DOM to a fixture **itself** (FR-018) for offline re-verification —
+  the operator never hand-captures markup. The agent does all the busy work; the human
+  does the irreducible eyeballing, smoothly.
+- **"Deferred" is a first-class state, not a checked box** (Escalation #1 correction C).
+  A `[LIVE]` validation that has not been run renders as `[ ] DEFERRED — live-unverified`,
+  never `[x]`. The change carries an explicit *provisional* status until T026 runs; US1
+  (no portal) reaches genuine *done* independently, so value lands without waiting on any
+  live validation the operator may defer.
 
 ### File structure
 
@@ -75,7 +113,7 @@ discuss/
   README.md
   src/discuss/
     __init__.py
-    cli.py            # `discuss` entry point + the orchestrator/pipeline (wires US1–US3)
+    cli.py            # `discuss` entry point + orchestrator/pipeline (wires US1–US3) + `discuss validate` guided live-check (FR-017)
     config.py         # profile dir, target class id(s), confirm flag, editor cmd, run-root
     browser.py        # [COVERAGE-EXEMPT] persistent-context lifecycle + login detection/pause
     portal_adapter.py # [COVERAGE-EXEMPT] live navigate/extract/fill; runtime field-type detect; SELECTOR constants
@@ -95,6 +133,11 @@ discuss/
     test_handoff.py
     test_cli_pipeline.py          # adapter + session mocked
     test_selector_confinement.py  # FR-013 static check (no live portal)
+    test_main_smoke.py            # NO-MOCK seam smoke: real Config.load→_load_overrides→run, only browser stubbed (SC-006)
+    test_fill_offline.py          # real fill_reply vs fixtures/reply_form.html via file:// (controlled real boundary)
+    test_no_submit.py             # structural: fill_reply has no submit/post lookup or click (FR-010)
+    test_no_creds.py              # structural: no credential write; only the profile dir is touched (FR-002)
+    test_validate.py              # `discuss validate` flow: single-keypress confirms; DOM self-snapshot on miss (FR-017/018)
   docs/
     SELECTOR-CAPTURE.md     # operator checklist: capture live selectors + verify live steps
 ```

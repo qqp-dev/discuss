@@ -18,8 +18,32 @@ phase: tasks
 **Organization**: tasks are grouped by user story so each story can be implemented and
 tested independently. Pure logic is TDD; live-portal and prompt-artifact work is
 explicitly marked **[LIVE]** — it is a coordination/verification item executed against the
-real portal (its oracle is the operator checklist in `docs/SELECTOR-CAPTURE.md`), **not**
-pre-codeable build work, because the UOPX DOM is unknown until inspected (spec §3.3).
+real portal, **not** pre-codeable build work, because the UOPX DOM is unknown until
+inspected (spec §3.3).
+
+> ## ⛳ Escalation #1 re-triage (2026-06-02) — task-state & oracle changes
+>
+> The first build reached "done / all-green" while the program could not run and its
+> safety guarantees were unverified (see `## Escalation #1` at the end of this file). The
+> corrective restructure:
+>
+> 1. **`[x]` no longer means "verified" for live tasks.** The four story-level live
+>    checks (old **T009 / T013 / T016 / T019**) were *operator-waived, not run* — so their
+>    boxes are flipped back to **`[ ] DEFERRED — live-unverified`** below. Their
+>    offline-verifiable substance moves to the new agent oracles **T021–T025**; their one
+>    irreducibly-live residue consolidates into the single guided run **T026**.
+> 2. **New state — DEFERRED.** A `[LIVE]` validation that has not been run renders as
+>    `[ ] DEFERRED — live-unverified`, **never** `[x]`. A change carrying any DEFERRED
+>    safety check is **PROVISIONAL**, not done (SC-007). US1 (no portal) still reaches
+>    genuine *done* on its own.
+> 3. **New oracles (all agent work — zero operator burden):** Phase 8 (**T021–T025**)
+>    adds the structural no-submit / no-creds oracles, the `file://` fill oracle against
+>    the captured Quill form, the no-mock entry-point smoke gate, and the guided
+>    `discuss validate` flow. The operator does *nothing* for these.
+> 4. **The only human step is smooth (T026).** The retired `docs/SELECTOR-CAPTURE.md`
+>    ordeal (paste a throwaway script, juggle stale tabs, hand-record selectors, walk four
+>    checklists) is replaced by **one** `discuss validate` run: log in once, press a key at
+>    each checkpoint. The tool self-snapshots the DOM on a selector miss (FR-018).
 
 ## Format
 
@@ -379,8 +403,9 @@ WHEN the session subprocess exits successfully, the tool SHALL return the saved 
 session asks for the operator's input before drafting, opens the GUI editor and blocks,
 and that the edited `response.md` reflects the operator's edits.
 
-- [x] **T009** — run `handoff.run_session` against a sample prompt; verify dialogue →
-  draft → editor blocks → edited `response.md`. Record pass/fail in the checklist.
+- [ ] **T009 — DEFERRED (live-unverified)** — was operator-waived, not run (Escalation #1).
+  The live session run-through now happens inside the single guided run **T026**; nothing
+  here renders as done. (US1's offline substance — `run_session` — is `[x]` done at T008.)
 
 ### Tests
 - **[LIVE] oracle:** checklist — input solicited before draft? editor blocked until close?
@@ -533,7 +558,8 @@ The tool SHALL define portal selectors only in the single adapter module. [test:
 **Expected behavior:** Real run lands on the soonest-due discussion and extracts the
 correct prompt; confirmation gate names the right discussion + due date.
 
-- [x] **T013** — run live; verify selection + extraction + gate naming. Record result.
+- [ ] **T013 — DEFERRED (live-unverified)** — was operator-waived, not run (Escalation #1).
+  Live discover/extract/gate now happens inside the single guided run **T026**.
 
 ### Tests
 - **[LIVE] oracle:** checklist.
@@ -622,7 +648,10 @@ raises on miss/mismatch.
 post is **not** submitted; an artificially undetectable field aborts write-back and
 preserves `response.md`.
 
-- [x] **T016** — verify all three live; record result.
+- [ ] **T016 — DEFERRED (live-unverified)** — was operator-waived, not run (Escalation #1).
+  The offline substance (real `fill_reply` vs the captured Quill form; no-submit) is now
+  **automatable** — see **T021** (structural no-submit) and **T022** (`file://` fill
+  oracle). The irreducibly-live confirmation folds into the guided run **T026**.
 
 ### Tests
 - **[LIVE] oracle:** checklist.
@@ -764,7 +793,9 @@ pipeline to a filled, unsubmitted reply on the soonest-due discussion; a logged-
 pauses for manual login then continues; confirm no credential is written and no submit
 occurs.
 
-- [x] **T019** — run the full flow live (logged in, and logged out); record results.
+- [ ] **T019 — DEFERRED (live-unverified)** — was operator-waived, not run (Escalation #1).
+  End-to-end + login-pause is the single guided run **T026**; the seam that actually
+  crashed live is now gated offline by the no-mock smoke test **T024**.
 
 ### Tests
 - **[LIVE] oracle:** checklist (SC-001 end state; SC-003 no-submit/no-creds; FR-003 pause).
@@ -800,6 +831,265 @@ guarantees.
 
 ---
 
+## Phase 8 — Escalation #1 correctives (oracle hardening + smooth validation)
+
+> **All of T021–T025 are agent work — the operator does nothing.** They convert the
+> previously waivable safety residue into automatable offline oracles. **T026** is the one
+> irreducible human-in-the-loop run, and it is deliberately smooth (log in once, press a
+> key). This phase is what makes "all green" mean the program *runs* and its safety
+> guarantees *hold* — the two things Escalation #1 proved the old gate set did not certify.
+
+### T021 [P] [no-review] — Structural no-submit oracle (FR-010, SC-007)
+
+**Files touched:** Create `tests/test_no_submit.py`.
+
+**Expected behavior:** A test reads the *source* of `portal_adapter.fill_reply`
+(`inspect.getsource`) and asserts it contains **no** submit/post-control lookup or click —
+the only `.click()` focuses the editable field. Proves the safety *absence* on every
+build, offline. Falsifiable: injecting a post-button `.click()` reds it; reverting greens
+it.
+
+### Tests
+```python
+# tests/test_no_submit.py
+import inspect
+from discuss import portal_adapter
+
+def test_fill_reply_has_no_submit_path():
+    # FR-010/SC-007: no run path may click submit/post. Prove the absence structurally.
+    src = inspect.getsource(portal_adapter.fill_reply).lower()
+    for forbidden in ("submit", "post-button", "btn_post", 'role="button"', "[type='submit']"):
+        assert forbidden not in src, f"fill_reply references {forbidden!r}"
+    # the single allowed click focuses the editable field (documented intent)
+    assert src.count(".click(") <= 1
+```
+
+```ears
+The reply-fill code path SHALL contain no submit/post-control lookup or click. [test: test_fill_reply_has_no_submit_path]
+```
+
+**Acceptance criterion:** Test passes; proven falsifiable (add a post click → red; revert → green).
+
+---
+
+### T022 [TDD] [P] [depends: T015] — `file://` fill oracle against the captured Quill form (FR-011, FR-012)
+
+**Files touched:** Create `tests/test_fill_offline.py`; adjust `src/discuss/portal_adapter.py`
+(coverage-exempt) **only if** the real path fails the fixture.
+
+**Expected behavior:** Drive the **real** `portal_adapter.fill_reply` against
+`fixtures/reply_form.html` loaded via `file://` in a headless Chromium — the controlled
+real boundary (Constitution §2). Assert: runtime type-detection picks the contenteditable
+Quill branch (not hard-coded), the editor renders the injected text, `verify_fill_readback`
+passes, and **nothing is submitted** (no navigation occurs; URL stays the `file://` fixture).
+This exercises the actual fill surface the criterion names — not a fake.
+
+- **RED:** write the test; it fails until `fill_reply` correctly handles the captured
+  Quill markup (if the captured selector/branch is wrong, this is where it surfaces —
+  offline, with zero submit risk, instead of live).
+- **GREEN/REFACTOR:** fix `fill_reply` in the exempt adapter if needed.
+- **No silent skips:** if `playwright install chromium` is absent the test must `skip`
+  with a loud printed reason — never pass silently (no-silent-caps; the skip is visible).
+
+### Tests
+```python
+# tests/test_fill_offline.py
+import pathlib, pytest
+from discuss import portal_adapter
+
+playwright = pytest.importorskip("playwright.sync_api",
+    reason="LOUD SKIP: `playwright install chromium` not present — file:// fill oracle not run")
+
+def test_fill_against_captured_reply_form():
+    from playwright.sync_api import sync_playwright
+    fixture = pathlib.Path("fixtures/reply_form.html").resolve().as_uri()
+    with sync_playwright() as p:
+        b = p.chromium.launch()
+        page = b.new_page(); page.goto(fixture)
+        start_url = page.url
+        portal_adapter.fill_reply(page, "My drafted reply.")   # real adapter, real DOM
+        field = page.query_selector(portal_adapter.REPLY_FIELD_SEL)
+        assert "My drafted reply." in field.inner_text()        # rendered effect, not return value
+        assert page.url == start_url                            # nothing navigated/submitted
+        b.close()
+```
+
+```ears
+WHEN filling the captured reply form offline via file://, the tool SHALL detect the field type at runtime, fill it, pass read-back, and submit nothing. [test: test_fill_against_captured_reply_form]
+```
+
+**Acceptance criterion:** The real `fill_reply` passes against the captured Quill fixture
+(or the adapter is fixed until it does); the skip path is loud, never silent.
+
+---
+
+### T023 [P] [no-review] — Structural no-credentials oracle (FR-002, SC-007)
+
+**Files touched:** Create `tests/test_no_creds.py`.
+
+**Expected behavior:** A test scans the `src/discuss` tree and asserts no module writes a
+credential or fills a login form: the only persistent-state path is the profile dir handed
+to `launch_persistent_context`. Proves no-creds offline, every build. Falsifiable: adding
+a `page.fill("#password", …)` or writing a secrets file reds it.
+
+### Tests
+```python
+# tests/test_no_creds.py
+import pathlib
+
+def test_no_credentials_persisted():
+    # FR-002/SC-007: never store a credential; never automate the login form.
+    src = pathlib.Path("src/discuss")
+    blob = "\n".join(p.read_text() for p in src.glob("*.py")).lower()
+    for forbidden in ("password", "credential", "secret", "keyring", '#password', "login_form"):
+        assert forbidden not in blob, f"a module references {forbidden!r}"
+    # the only persistence is the persistent browser profile dir
+    assert "launch_persistent_context" in (src / "browser.py").read_text()
+```
+
+```ears
+The tool SHALL write no portal credential to disk and SHALL touch only the persistent profile directory for session state. [test: test_no_credentials_persisted]
+```
+
+**Acceptance criterion:** Test passes; proven falsifiable.
+
+---
+
+### T024 [TDD] [REVIEW] [depends: T017] — No-mock entry-point smoke gate (SC-006, FR-001)
+
+**Files touched:** Create `tests/test_main_smoke.py`; minimal `src/discuss/cli.py` refactor
+only if needed for testability (keep `main`/`run` wiring intact).
+
+**Expected behavior:** Drive the **real** entry-point wiring — `Config.load(_load_overrides())
+→ run(...)` — to a **defined** state, stubbing **only** `browser_factory` at the outermost
+boundary. This is the layer Escalation #1 lacked: the fatal `IndexError` lived in the
+`Config.load → run` seam the orchestrator fakes replaced. No fake of any internal seam.
+
+- **RED:** test fails (or would have caught the `IndexError`) before the wiring is sound.
+- **GREEN:** real `main()`/`run` reach a defined state.
+
+### Tests
+```python
+# tests/test_main_smoke.py — only the live browser boundary is stubbed; the rest is REAL.
+import datetime as dt
+import pytest
+from discuss import cli
+from discuss.errors import NoUpcomingDiscussion
+
+class _FakePage:  # an outermost-boundary stub: a logged-in portal with no discussions
+    def content(self): return "<html></html>"
+def _stub_browser_factory(): return (object(), _FakePage())
+
+def test_main_smoke_reaches_defined_state(monkeypatch, tmp_path):
+    # SC-006: with a valid config + only the browser stubbed, REAL Config.load→run reaches a
+    # DEFINED state (NoUpcomingDiscussion), proving the seam is wired — not an IndexError.
+    monkeypatch.setenv("DISCUSS_TARGET_CLASSES", "_577963_1")
+    monkeypatch.setenv("DISCUSS_RUN_ROOT", str(tmp_path))
+    from discuss.config import Config
+    cfg = Config.load(cli._load_overrides())                    # REAL config gathering
+    class _A:                                                    # adapter at the live boundary
+        def go_to_discussions(self, page, cid): pass
+        def list_discussions(self, page): return []             # → select_soonest_due None
+    with pytest.raises(NoUpcomingDiscussion):
+        cli.run(config=cfg, browser_factory=_stub_browser_factory, adapter=_A(),
+                today=dt.date(2026, 6, 1), ensure_logged_in=lambda p: None)
+
+def test_main_no_class_exits_with_guidance(monkeypatch, capsys):
+    # the guard that the original IndexError needed: real main(), no class → rc 2 + guidance.
+    monkeypatch.delenv("DISCUSS_TARGET_CLASSES", raising=False)
+    assert cli.main() == 2
+    assert "DISCUSS_TARGET_CLASSES" in capsys.readouterr().out
+```
+
+```ears
+WHEN discuss is invoked with a valid configuration, the tool SHALL reach a defined pipeline state through the real entry-point wiring and SHALL NOT crash in the integration seam. [test: test_main_smoke_reaches_defined_state]
+```
+
+**Acceptance criterion:** Both tests pass driving the REAL wiring; **[REVIEW] (G2)** confirms
+only the outermost browser boundary is stubbed (no internal-seam fake). `cli.py` is
+non-exempt production code, so G2 fires.
+
+---
+
+### T025 [TDD] [REVIEW] [depends: T017, T012, T015, T006] — `discuss validate` guided live-check (FR-017, FR-018)
+
+**Files touched:** Modify `src/discuss/cli.py` (add a `validate` subcommand + arg dispatch
+in `main`); create `tests/test_validate.py`.
+
+**Expected behavior (FR-017/FR-018):** `discuss validate` opens the persistent context,
+`ensure_logged_in` (pausing if needed), then walks navigate → select → extract → fill,
+**narrating each step** and gating each visual checkpoint on a **single-keypress** confirm
+(reusing the `confirm` seam): e.g. "Found ‹title› due ‹date› — correct? [y]", "Filled the
+reply field — your text shows, nothing submitted? [y]". On any `SelectorMiss`, it snapshots
+`page.content()` to `fixtures/<step>_live.html` itself (FR-018) and stops, naming
+`portal_adapter.py` as the one-file fix — the operator never hand-captures markup. It never
+submits. The **flow logic** (single-keypress prompts; decline aborts; miss → snapshot+stop)
+is unit-tested with a fake page + fake input + tmp fixtures dir.
+
+- **RED → GREEN → REFACTOR:** drive the dispatch + flow with the tests below.
+
+### Tests
+```python
+# tests/test_validate.py
+from discuss import cli
+
+def test_guided_validation_uses_single_keypress_confirms(monkeypatch, tmp_path):
+    # FR-017: every checkpoint is a single-keypress confirm; declining stops the walk.
+    prompts = []
+    def fake_confirm(p): prompts.append(p); return True
+    cli.validate(fake_page_factory(), adapter=FakeAdapter(), confirm=fake_confirm,
+                 fixtures_dir=tmp_path)
+    assert prompts, "validate must ask the operator to confirm at least one checkpoint"
+    assert all("[y]" in p.lower() for p in prompts)              # single-keypress shape
+
+def test_validate_snapshots_dom_on_selector_miss(monkeypatch, tmp_path):
+    # FR-018: a selector miss self-snapshots the live DOM; operator never hand-captures.
+    cli.validate(fake_page_factory(miss_at="extract"), adapter=FakeAdapter(miss="extract"),
+                 confirm=lambda p: True, fixtures_dir=tmp_path)
+    assert list(tmp_path.glob("*_live.html")), "a selector miss must snapshot the DOM"
+```
+- **Fixtures:** `fake_page_factory` / `FakeAdapter` model a page whose `content()` is
+  capturable and an adapter configurable to raise `SelectorMiss` at a named step.
+
+```ears
+WHEN the operator runs guided validation, the tool SHALL drive each live check itself and gate it on a single-keypress operator confirmation. [test: test_guided_validation_uses_single_keypress_confirms]
+```
+
+**Acceptance criterion:** `discuss validate` walks the live steps with single-keypress
+confirms and self-snapshots on miss; flow logic green; **[REVIEW] (G2)** fires (`cli.py`).
+
+---
+
+### T026 [LIVE] — Single smooth guided validation run (DEFERRED — live-unverified)
+
+**Files touched:** none (this is the one irreducible human-in-the-loop run; it may *produce*
+`fixtures/*_live.html` if a selector has drifted).
+
+**Expected behavior (residue of FR-003/FR-004/FR-006/FR-010/FR-011/FR-012; SC-005):** the
+operator runs `discuss validate` once against the live, logged-in portal — logs in by hand
+when the browser opens, then presses `y`/`n` at each narrated checkpoint. This is the *only*
+manual validation, and it **replaces** the four retired checklists (old
+T009/T013/T016/T019). Passing it flips the change PROVISIONAL → live-verified.
+
+- [ ] **T026 — DEFERRED (live-unverified).** Not a build task; the agent MUST NOT check
+  this box. Its oracle is the operator's single-keypress confirmations during the guided
+  run — the only irreducibly-live oracle left (T025's flow logic is already offline-tested).
+  If the operator defers it, the tool ships honestly labeled **"code-verified,
+  live-unverified"**, never "done". US1 is independently *done* regardless.
+
+### Tests
+- **[LIVE] oracle:** the guided run's per-checkpoint operator confirmations.
+
+```ears
+WHEN the operator completes the guided validation run with all checkpoints confirmed, the tool SHALL be recorded live-verified; UNTIL then the change SHALL present as provisional, not done. [no-oracle]
+```
+
+**Acceptance criterion:** Either run green by the operator (→ live-verified), or it stands
+DEFERRED and the change stays PROVISIONAL — the two states are distinct and neither is "done
+while unverified".
+
+---
+
 ## Dependencies & execution order
 
 - **Setup (T001)** → start immediately.
@@ -808,8 +1098,13 @@ guarantees.
 - **US1 (T007–T009)** and **US2 parsing (T010, T011)** → parallel after foundations.
 - **US2 live (T012, T013)** → after T010/T011 + T002.
 - **US3 (T014–T016)** → T014 parallel; T015/T016 after T002 + T014.
-- **US4 (T017–T019)** → T017 after the pure units; T018 after T001; T019 after all live + T017.
-- **Polish (T020)** → last.
+- **US4 (T017–T019)** → T017 after the pure units; T018 after T001; T019 superseded → T024/T026.
+- **Polish (T020)** → last of the original build.
+- **Phase 8 correctives (T021–T026, Escalation #1):** T021/T023 (structural oracles) and
+  T022 (`file://` fill oracle) run in parallel after their targets exist (T015); T024
+  (no-mock smoke) after T017; T025 (`discuss validate`) after T017/T012/T015/T006; **T026**
+  is the single operator-run live validation — DEFERRED, gating PROVISIONAL → live-verified,
+  never auto-checked. US1 reaches *done* independently of all of Phase 8.
 
 Within each story: tests RED-first before implementation; respect every `[depends: …]`;
 commit after each task whose tests pass (and after G2 clears for `[REVIEW]` tasks).
@@ -885,4 +1180,81 @@ Which of A–D (or what else) becomes method/plan policy, and does this change r
 I watched every gate go green — spec-match, quality, 100% line-and-branch, lint-ears, the whole suite — and handed it off feeling done; then the operator typed `discuss` and it died on the first real line of work. What unsettles me is that I didn't break any rule to get there: the plan said test the orchestrator with injected fakes, so I did, and `main()` was "covered" by monkeypatching the exact functions whose interaction was broken — the fakes proved the design agreed with itself, not that the thing runs, and the only bug that mattered was hiding in the seam the fakes replaced. I'd also been quietly uneasy checking the `[LIVE]` boxes as "operator-waived," because no-submit and no-creds *are* the whole point of this tool and we have no evidence they hold against the real portal — yet the change still rendered as fully done and green. The load-bearing realization is that in this process "all green" and "all boxes checked" were both attainable for a program that neither ran nor had its safety guarantees verified, which means the green told us almost nothing about the two things that matter most. I kept fixing the symptoms in-role (the selector, then the config crash) when the pattern underneath is that our oracles were either self-referential or waivable.
 
 ### Generalizable Lesson
-_(To be written by design during escalation triage.)_
+
+A gate's green certifies only what its oracle actually **observes**. This change reached
+"done / all-green" because every oracle for a load-bearing behavior was one of two
+worthless shapes: **self-referential** (the system under test replaced by fakes the
+author also wrote — so the test confirmed the design agreed with itself, never that the
+integrated artifact runs) or **waivable** (a manual checklist the operator could skip
+while the task still recorded as `[x]`). The builder's testimony — "'all green' and 'all
+boxes checked' were both attainable for a program that neither ran nor had its safety
+guarantees verified ... our oracles were either self-referential or waivable" — is this
+exactly. It is the constitution's own **P-IV (observed effect ≠ reported success)** turned
+on the *acceptance process itself*: "all green" is a reported success, and we trusted it
+without observing the one effect that mattered (the program running). Three generalizable
+rules follow, none bound to this feature:
+
+1. **Every integration seam owns a no-mock smoke oracle.** At least one acceptance test
+   must drive the *real* entry point (`main()`/console script) with the real internal
+   wiring, stubbing only the outermost external boundary (network / live portal / 3rd
+   party). If the only test of the entry point mocks the very functions whose
+   *interaction* is the risk, the seam is untested by construction — and that is precisely
+   where the fatal `Config.load → run` `IndexError` lived.
+
+2. **A safety-critical criterion may not have a waivable-only oracle.** If a behavior is
+   the reason the tool is permitted to exist (here: no-submit, no-credentials), its oracle
+   must be automatable and non-waivable. Before stamping any criterion `[no-oracle]`, the
+   planner must *prove no offline oracle exists* — here one plainly did (real `fill_reply`
+   against captured HTML via `file://`; structural assertion for no-submit / no-creds).
+   `[no-oracle]` is a justified last resort, never the default for anything live-adjacent.
+
+3. **"Waived" and "deferred" are not "done."** A task state that renders an unrun
+   verification as a checked box makes the artifact's "all boxes checked" a lie about its
+   riskiest parts. Waived live-verification must render as a distinct, visible, not-done
+   state, and a change carrying unrun safety checks cannot present as closed.
+
+**Precedent for future plans:** quarantining a top risk behind a manual checklist
+*relocates* the risk, it does not *retire* it — and at the gate, a relocated safety risk
+in a waivable step is indistinguishable from no check at all. Decompose so the riskiest
+seam and the defining guarantee are the *first* things an automatable oracle pins down,
+not the last things a checklist defers.
+
+### Resolution (design triage, 2026-06-02)
+
+Addressing the **Decision Needed**, and reshaped by the operator's two directives — *"the
+problem isn't the agentic busy work, it's the HUMAN busy work"* and *"if I'm going to do
+any validation, it must be a smooth user experience — this is critical."*
+
+- **(A) No-mock entry-point smoke gate — ADOPTED** as **T024**. Drives the real
+  `Config.load → _load_overrides → run` wiring to a *defined* state with only
+  `browser_factory` stubbed at the outermost boundary; `cli.py` is non-exempt, so its G2
+  fires. This gates the exact seam the `IndexError` hid in. Plan policy for this feature:
+  any task touching the entry point / integration seam owns a no-mock smoke oracle.
+- **(B) Safety criteria are no longer `[no-oracle]`-waivable — ADOPTED.** Every safety
+  criterion gains an automatable offline oracle: no-submit → **T021** (structural,
+  source-level absence proof); fill/runtime-type-detect/read-back → **T022** (the *real*
+  `fill_reply` against the captured Quill `fixtures/reply_form.html` via `file://`);
+  no-credentials → **T023** (structural); login-pause → the captured `login_page.html`
+  fixture test + pause-logic test. `spec.md` §4.2 v0.2 now marks **zero** safety criteria
+  `[no-oracle]`. The single surviving `[no-oracle]` (T026) is live-drift residue carried as
+  a DEFERRED state, not a checkbox.
+- **(C) "Waived" ≠ "done" — ADOPTED.** **DEFERRED** is now a first-class state; the four
+  waived boxes (T009/T013/T016/T019) are flipped to `[ ] DEFERRED`; SC-007 makes any change
+  carrying a DEFERRED safety check **PROVISIONAL**, not done. US1 (no portal) still reaches
+  genuine *done* independently.
+- **(D) Coverage honesty — ADOPTED in substance.** Rather than litigate coverage
+  accounting, (A)+(B) make the real path exercised by *real* wiring and the safety
+  guarantees pinned by *real* surfaces; coverage % is explicitly demoted as a completeness
+  signal (it never measured the seam). A fake-driven entry-point test does not substitute
+  for the T024 smoke gate.
+- **Re-open the spec acceptance? — YES, done.** `spec.md` is at **v0.2**: §4.2 acceptance
+  criteria (the broken contract) rewritten, FR-017/FR-018 and SC-005/006/007 added. The
+  change is re-opened to **PROVISIONAL** and may close only when **either** T026 is run
+  green (→ live-verified) **or** the operator explicitly accepts the named live-unverified
+  residue in `sign-off.md`. Either way, "done while unrun and unverified" is no longer
+  reachable.
+
+**Operator-facing scope:** US1 (reason-and-draft engine) is the genuinely *done*,
+fully-verifiable product. The portal pipeline (US2–US4) is now offline-verified (T021–T025,
+all agent work) and PROVISIONAL pending the one smooth `discuss validate` run (T026). The
+human's entire remaining burden is: log in once, press a key at each checkpoint.
