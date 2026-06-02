@@ -88,7 +88,7 @@ button, the discussions list (rows + due-date cells), a discussion prompt contai
 the reply field. Saved HTML is committed as fixtures for parsing tests. This is a
 coordination/verification item — its oracle is the checklist, not a unit test.
 
-- [ ] **T002**
+- [x] **T002**
   - Install browsers: `python -m playwright install chromium`.
   - Open the persistent profile once. Save the **logged-out login page** first, then log
     in by hand and save the discussions-list page, one discussion page, and the reply-form
@@ -412,7 +412,7 @@ prompt. **Independent Test**: see spec US2.
 skips past-due and unparseable dates; deterministic tiebreak (earliest due, then list
 order); returns `None` when nothing is upcoming.
 
-- [ ] **T010 — RED → GREEN → REFACTOR**
+- [x] **T010 — RED → GREEN → REFACTOR**
   - RED: write the tests below against `fixtures/discussions_list.html`; watch them fail.
   - GREEN: parse with `selectolax`; parse the due-date format recorded in T002; implement
     selection.
@@ -827,3 +827,4 @@ items — their oracle is `docs/SELECTOR-CAPTURE.md`, not pytest.
 | G2 | T005 (missing/blank-response-raises EARS; handoff I/O) | clear | spec-match: `test_read_response_empty_raises` satisfied — `read_response` strips then raises `EmptyResponse` on blank AND missing before any write-back. quality: PASS — no leaks (self-closing I/O), explicit utf-8, `mkdtemp` collision-free; benign exists()→read TOCTOU and None-input both non-defects under tool-controlled single-operator threat model. 100% line/branch on handoff.py. |
 | G2 | T008 (session-exit-returns-response EARS; run_session) | clear | spec-match: `test_run_session_invokes_claude_in_run_dir` satisfied — `run_session` launches `claude` (`cmd[0]`) with `cwd=run_dir` + `DISCUSS_EDITOR` env, returns `read_response` on rc==0. quality: PASS — list-arg subprocess (no shell=True, no injection), env is superset of `os.environ` (PATH/HOME preserved), non-zero→DiscussError, blank→EmptyResponse. Noted: `" ".join(editor_cmd)` lossy on space-containing args (operator-config fidelity nit, not a defect; matches task GREEN). 100% line/branch on handoff.py. |
 | G2 | T014 (read-back-mismatch-fails EARS; verify_fill_readback) | BLOCK→clear (1 bounce) | quality BLOCK (round 1): symmetric tag-strip stripped markup from the *intended* side too → fail-OPEN (`verify("Use Vec<String>","Use Vec<HashMap>")` wrongly True), letting a garbled paste pass the FR-012 safety gate. **Fix:** asymmetric normalization — `intended` whitespace-collapsed only (literal `<…>` preserved), `actual` markup-stripped; added regression tests (incl. empty-actual). Round 2: quality PASS (fail-open gone; tag-strip on actual can only delete spans, residual ambiguity fails SAFE) + spec-match PASS (`test_readback_mismatch_detected`). 100% line/branch on portal_parse.py. |
+| G2 | T010 (soonest-due + no-upcoming-stop EARS; parse_discussions/select_soonest_due) | BLOCK→clear (1 bounce) | spec-match PASS: `test_select_soonest_due_from_fixture` (picks 2026-06-02 Wk1, the soonest upcoming) + `test_no_upcoming_due_returns_none` (all-past → None) both satisfied. quality BLOCK (round 1): `PROMPT_CONTAINER_SEL` imported into portal_parse.py but unused (it belongs to T011's extractor) — F401 dead import. **Fix:** removed the import (returns with T011). Round 2: quality PASS — no dead imports, strptime guarded by try/except ValueError (bad/empty cells → None, no crash), stable-`min` tie-break deterministic, no injection/leak surface. **Capture correction:** `discussion_rows` selector changed `makeStylescontainer`→`makeStylescontentListItem` so each row nests its own due-date cell (the recorded one excluded them, making every discussion look undated); verified 7 rows/5 dated against the fixture. 100% line/branch on portal_parse.py. |

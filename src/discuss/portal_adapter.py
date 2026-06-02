@@ -17,44 +17,68 @@ of the live tasks can run until SELECTORS and DUE_DATE_FORMAT are filled.
 from __future__ import annotations
 
 # ---------------------------------------------------------------------------------------
-# SELECTORS — FILL THESE FROM A LIVE CAPTURE (docs/SELECTOR-CAPTURE.md, task T002).
+# SELECTORS — captured from a LIVE portal session (docs/SELECTOR-CAPTURE.md, task T002).
 #
-# Each value is a CSS/text selector captured against the REAL logged-in UOPX portal. They
-# are intentionally empty ("") placeholders until the operator records them. This dict is
-# the single source of portal selectors in the whole codebase (FR-013 / SC-002): a portal
-# change is fixed by editing ONLY this file.
+# Each value is a CSS/text selector recorded against the REAL logged-in UOPX portal and
+# then validated by running the actual Playwright/Chromium selector engine against the
+# captured fixtures (match counts noted per selector). This module is the single source of
+# every portal selector in the codebase (FR-013 / SC-002): a portal markup change is fixed
+# by editing ONLY this file.
+#
+# The selector STRINGS are authored here as named `*_SEL` constants so pure consumers
+# (`portal_parse`) can import the VALUES without re-declaring them — the strings still live
+# only here. `SELECTORS` (the dict) is assembled from the same constants for the live
+# adapter's own use, so there is exactly one authoring site per selector.
+#
+# The portal is Blackboard Ultra (vle.phoenix.edu). Its CSS classes are Material-UI/JSS —
+# `makeStyles<rule>-0-2-NNN` — where only the trailing index churns between builds, so we
+# match the stable `<rule>` prefix via [class*="makeStyles<rule>"] rather than the full
+# class. These resolve correctly against today's markup; a live re-verify is only needed if
+# Ultra's markup changes (then this file is the one-file fix).
 # ---------------------------------------------------------------------------------------
-# Recorded from the live capture (docs/SELECTOR-CAPTURE.md) and then validated by running
-# the actual Playwright/Chromium selector engine against the captured fixtures (match
-# counts noted per selector). The portal is Blackboard Ultra (vle.phoenix.edu). Its CSS
-# classes are Material-UI/JSS — `makeStyles<rule>-0-2-NNN` — where only the trailing index
-# churns between builds, so we match the stable `<rule>` prefix via [class*="makeStyles<rule>"]
-# rather than the full class. These resolve correctly against today's markup; a live
-# re-verify is only needed if Ultra's markup changes (then this file is the one-file fix).
+
+# Click-path: the control that opens a class's discussions area. NOT in the captured
+# fixtures (it's on the course landing page). The pipeline navigates directly to the
+# engagement URL instead (…/ultra/courses/<id>/engagement), so this is left empty unless a
+# start-from-homepage click-path is later required.
+CLASS_LINK_SEL = ""
+
+# Discussions list: one row per discussion. Validated: 7/7 discussion rows, and — unlike
+# the narrower `makeStylescontainer` card — each `contentListItem` row also NESTS that
+# discussion's due-date cell, so a row + a within-row due lookup pair up correctly (T010
+# soonest-due). A row container that excludes the due cell would make every discussion look
+# undated.
+DISCUSSION_ROWS_SEL = "div[class*='makeStylescontentListItem']"
+
+# Due-date cell within a row, text "Due date: 6/2/26, 1:59 AM (CDT)". Validated: 5 cells,
+# all genuine due dates. NOTE only graded discussions have one — 2 of the 7 (e.g. the
+# ungraded intro) have NO due date, so soonest-due selection (T010) must skip rows without
+# a parseable "Due date:" rather than treat them as due now/never.
+DUE_DATE_CELL_SEL = "[class*='makeStylesgradeDetail']"
+
+# The link/title that opens a discussion (stable href hook; also carries
+# aria-label="Discussion, <title>"). Validated: 7 anchors -> 7 distinct discussions.
+DISCUSSION_LINK_SEL = "a[href*='/engagement/discussion/_']"
+
+# On a discussion page: the instructor prompt, read-only Quill. The id is reused 12×
+# (prompt + every read-only post), so the prompt is the FIRST match — the adapter/extractor
+# takes the first. Validated: first is the prompt ("Hello! Please take a moment…").
+PROMPT_CONTAINER_SEL = "#bb-editor-textbox"
+
+# The reply field: the single editable Quill editor (placeholder "Type a Post"). Validated:
+# exactly 1 match. fill_reply (T015) still detects textarea-vs-richtext at runtime per
+# FR-011 — do NOT hard-code the type.
+REPLY_FIELD_SEL = ".ql-editor[contenteditable='true']"
+
+# The single dict view the live adapter uses; assembled from the constants above so each
+# selector is authored exactly once (FR-013 / SC-002).
 SELECTORS = {
-    # Click-path: the control that opens a class's discussions area. NOT in the captured
-    # fixtures (it's on the course landing page). The pipeline navigates directly to the
-    # engagement URL instead (…/ultra/courses/<id>/engagement), so this is left empty
-    # unless a start-from-homepage click-path is later required.
-    "class_link": "",
-    # Discussions list: one row per discussion. Validated: matches 7/7 discussion rows.
-    "discussion_rows": "div[class*='makeStylescontainer']:has(> h3 a[href*='/engagement/discussion/_'])",
-    # Due-date cell within a row, text "Due date: 6/2/26, 1:59 AM (CDT)". Validated: 5
-    # cells, all genuine due dates. NOTE only graded discussions have one — 2 of the 7
-    # (e.g. the ungraded intro) have NO due date, so soonest-due selection (T010) must skip
-    # rows without a parseable "Due date:" rather than treat them as due now/never.
-    "due_date_cell": "[class*='makeStylesgradeDetail']",
-    # The link/title that opens a discussion (stable href hook; also carries
-    # aria-label="Discussion, <title>"). Validated: 7 anchors -> 7 distinct discussions.
-    "discussion_link": "a[href*='/engagement/discussion/_']",
-    # On a discussion page: the instructor prompt, read-only Quill. The id is reused 12×
-    # (prompt + every read-only post), so the prompt is the FIRST match — the adapter takes
-    # `.first`. Validated: .first is the prompt ("Hello! Please take a moment…").
-    "prompt_container": "#bb-editor-textbox",
-    # The reply field: the single editable Quill editor (placeholder "Type a Post").
-    # Validated: exactly 1 match. fill_reply (T015) still detects textarea-vs-richtext at
-    # runtime per FR-011 — do NOT hard-code the type.
-    "reply_field": ".ql-editor[contenteditable='true']",
+    "class_link": CLASS_LINK_SEL,
+    "discussion_rows": DISCUSSION_ROWS_SEL,
+    "due_date_cell": DUE_DATE_CELL_SEL,
+    "discussion_link": DISCUSSION_LINK_SEL,
+    "prompt_container": PROMPT_CONTAINER_SEL,
+    "reply_field": REPLY_FIELD_SEL,
 }
 
 # Due-date strptime pattern for the text remaining AFTER the caller strips the "Due date: "
