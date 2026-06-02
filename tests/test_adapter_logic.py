@@ -10,10 +10,15 @@ against fakes (no live portal), so two more safety/pace criteria stop being waiv
    ``portal_adapter.go_to_discussions`` raise ``SelectorMiss`` after exactly ONE navigation.
 """
 
+import pathlib
+
 import pytest
 
 from discuss import browser, portal_adapter
 from discuss.errors import NotAuthenticated, SelectorMiss
+
+_LOGIN_SHELL = (pathlib.Path(__file__).resolve().parent.parent
+                / "fixtures" / "login_shell_prerender.html").read_text(encoding="utf-8")
 
 
 class _LoginPage:
@@ -57,11 +62,23 @@ def test_ensure_logged_in_proceeds_once_authenticated(monkeypatch):
 
 def test_no_retry_loop_on_selector_miss():
     # FR-016/P-I: a selector miss raises after exactly ONE navigation — no retry storm.
+    # Post-T030 the adapter waits for render then classifies before raising; this fake models a
+    # non-login page that never paints rows (content has no rows AND no login markers → the
+    # offline-pinned classify_landing returns 'unknown'), so go_to_discussions must raise
+    # SelectorMiss — not NotAuthenticated, and after exactly ONE navigation.
     gotos = []
 
     class _Page:
+        url = "https://vle.phoenix.edu/ultra/courses/_577963_1/engagement"  # NOT a login URL
+
         def goto(self, url, **kw):
             gotos.append(url)
+
+        def wait_for_selector(self, selector, **kw):
+            return None      # the bounded render wait elapses (no element ever paints)
+
+        def content(self):
+            return "<html><body>no rows, not the login shell</body></html>"
 
         def query_selector(self, sel):
             return None      # rows never resolve
@@ -69,3 +86,31 @@ def test_no_retry_loop_on_selector_miss():
     with pytest.raises(SelectorMiss):
         portal_adapter.go_to_discussions(_Page(), "_577963_1")
     assert len(gotos) == 1, "go_to_discussions must not retry-loop on a selector miss"
+
+
+def test_login_landing_raises_not_authenticated():
+    # T030/Esc#2 (offline-pinned): when navigation lands on the (captured, real) pre-render
+    # login shell, go_to_discussions raises NotAuthenticated — NOT a SelectorMiss — so the
+    # orchestrator can route to the post-navigation manual-login pause (T029). The login
+    # *decision* is the offline-pinned classify_landing (T028); this pins the adapter's BRANCH
+    # on it, leaving only the live wait-timing for T026. One navigation, no retry.
+    gotos = []
+
+    class _LoginLandingPage:
+        url = "https://vle.phoenix.edu/ultra/courses/_577963_1/engagement"  # SSO bounce keeps URL
+
+        def goto(self, url, **kw):
+            gotos.append(url)
+
+        def wait_for_selector(self, selector, **kw):
+            return None      # the login shell's body marker is "painted"; the wait resolves
+
+        def content(self):
+            return _LOGIN_SHELL   # the verbatim captured pre-render ForgeRock shell
+
+        def query_selector(self, sel):
+            return None
+
+    with pytest.raises(NotAuthenticated):
+        portal_adapter.go_to_discussions(_LoginLandingPage(), "_577963_1")
+    assert len(gotos) == 1, "a login landing must not retry-loop either"

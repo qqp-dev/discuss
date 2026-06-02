@@ -17,7 +17,7 @@ engine. The live navigate/extract methods (T012) and the runtime-typed `fill_rep
 
 from __future__ import annotations
 
-from discuss.errors import FillVerifyFailed, SelectorMiss
+from discuss.errors import FillVerifyFailed, NotAuthenticated, SelectorMiss
 
 # ---------------------------------------------------------------------------------------
 # SELECTORS — captured from a LIVE portal session (docs/SELECTOR-CAPTURE.md, task T002).
@@ -106,6 +106,19 @@ LOGIN_PAGE_MARKER = "University of Phoenix Login"
 LOGIN_SHELL_TITLE_MARKER = "<title>Login</title>"
 LOGIN_SHELL_BODY_MARKER = 'data-testid="fr-body-image"'
 
+# CSS form of the ForgeRock login-shell body marker, for the render wait below (Esc#2). Same
+# marker as LOGIN_SHELL_BODY_MARKER, expressed as a selector so wait_for_selector can wake on
+# EITHER the expected content OR the login shell appearing.
+LOGIN_SHELL_BODY_SEL = "[data-testid='fr-body-image']"
+
+# Bounded, human-paced render wait (Esc#2). The live portal + its IdP are client-rendered SPAs,
+# so the DOM is empty at `domcontentloaded`; we must wait for the content (or the login shell) to
+# PAINT before reading it. `wait_for_selector` is mutation-observer-based — it resolves the
+# instant the element appears and otherwise blocks up to the timeout; it is NOT a tight poll, so
+# it stays within the Respectful-guest pace (P-I). ~20s tolerates a slow paint without hanging a
+# human-in-the-loop run.
+LANDING_WAIT_MS = 20_000
+
 # The discussions area for a class. `class_link` is empty (the start-from-homepage click
 # is not used); we navigate directly to the engagement area, the stem every discussion row
 # in the captured list shares (…/courses/<id>/engagement). The exact landing URL is a live
@@ -126,15 +139,46 @@ DISCUSSIONS_URL_TEMPLATE = "https://vle.phoenix.edu/ultra/courses/{class_id}/eng
 # ---------------------------------------------------------------------------------------
 
 
+def _await_landing(page, content_sel: str, *, step: str, miss: str) -> None:
+    """Wait (bounded, ~20s) for the expected content OR the login shell to render, then branch
+    on the landing (Esc#2). A login redirect → ``NotAuthenticated`` so the orchestrator pauses
+    for manual login and retries (FR-003); the expected content present → proceed; neither
+    (timeout / unknown markup) → ``SelectorMiss`` naming the step.
+
+    The classification *decision* is the offline-pinned pure ``classify_landing`` (T028, unit-
+    tested against the captured pre-render shell fixture); only the wait *timing* is live. Both
+    imports are lazy so importing this module (and, transitively, ``portal_parse``) needs no
+    Playwright install and no constants cycle.
+    """
+    from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
+
+    from discuss.portal_parse import classify_landing
+
+    try:
+        page.wait_for_selector(f"{content_sel}, {LOGIN_SHELL_BODY_SEL}", timeout=LANDING_WAIT_MS)
+    except PlaywrightTimeoutError:
+        pass  # neither painted in time — fall through to classify/raise below (post-render)
+
+    if classify_landing(page.url, page.content()) == "login":
+        raise NotAuthenticated(f"the portal redirected to the login page at the {step!r} step")
+    if page.query_selector(content_sel) is None:
+        raise SelectorMiss(miss)
+
+
 def go_to_discussions(page, class_id: str):
-    """Navigate to the discussions list for ``class_id`` (FR-004). Raises SelectorMiss if
-    the list does not render (no discussion rows resolve)."""
+    """Navigate to the discussions list for ``class_id`` (FR-004). Waits for render, then:
+    a login redirect → ``NotAuthenticated`` (the orchestrator pauses for manual login, Esc#2);
+    no discussion rows after render → ``SelectorMiss``."""
     page.goto(DISCUSSIONS_URL_TEMPLATE.format(class_id=class_id), wait_until="domcontentloaded")
-    if page.query_selector(DISCUSSION_ROWS_SEL) is None:
-        raise SelectorMiss(
+    _await_landing(
+        page,
+        DISCUSSION_ROWS_SEL,
+        step="navigate",
+        miss=(
             f"discussions list did not render for class {class_id} "
             f"(no rows matched {DISCUSSION_ROWS_SEL!r})"
-        )
+        ),
+    )
     return page
 
 
@@ -147,13 +191,17 @@ def list_discussions(page):
 
 
 def open_discussion(page, discussion):
-    """Open ``discussion`` (a parsed row) and confirm its prompt container is present
-    (FR-006). Raises SelectorMiss if the prompt container is absent."""
+    """Open ``discussion`` (a parsed row) and wait for its prompt container to render (FR-006).
+    A login redirect → ``NotAuthenticated`` (Esc#2); no prompt container after render →
+    ``SelectorMiss``. This owns the render wait for the prompt page; ``extract_prompt`` then
+    reads the painted content."""
     page.goto(discussion.url, wait_until="domcontentloaded")
-    if page.query_selector(PROMPT_CONTAINER_SEL) is None:
-        raise SelectorMiss(
-            f"prompt container not found on discussion page (selector {PROMPT_CONTAINER_SEL!r})"
-        )
+    _await_landing(
+        page,
+        PROMPT_CONTAINER_SEL,
+        step="open",
+        miss=f"prompt container not found on discussion page (selector {PROMPT_CONTAINER_SEL!r})",
+    )
     return page
 
 
