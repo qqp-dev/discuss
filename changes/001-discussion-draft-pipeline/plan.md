@@ -7,8 +7,8 @@ phase: plan
 
 # Plan: `discussion-draft-pipeline`
 
-**Status:** v1
-**Date:** 2026-06-01
+**Status:** v2 (post-Escalation #2: SPA-render + auth-flow + persistence redesign)
+**Date:** 2026-06-02
 **Companion to:** `spec.md` and `tasks.md`
 
 **Goal:** A single-operator Python tool that, on one trigger, drives a logged-in UOPX
@@ -60,10 +60,22 @@ freedesktop `.desktop` launcher, a `--wait`-capable GUI editor.
    stubbed at the outermost boundary. This is the layer Escalation #1 lacked: the fatal
    `IndexError` lived in exactly the seam the orchestrator fakes replaced.
 
-The **irreducibly-live residue** (do today's captured selectors still match the live
-portal; does the real logged-out page trigger the pause) is **not** `[no-oracle]`; it is a
-single deferred, tool-driven `discuss validate` run (T026) whose state is distinct from
-"done".
+**Post-Escalation #2, the offline layer grows again** (the same "prove no offline oracle
+exists before stamping `[no-oracle]`" discipline, applied recursively): the FR-018
+self-snapshot handed us a *real* pre-render ForgeRock shell (`evidence-navigate_live.html`),
+which converts **login-shell classification** into a pure unit oracle (layer 1) —
+`portal_parse.classify_landing(url, html) -> login | discussions | unknown`, tested against
+the captured shell, the captured discussions list, and an arbitrary page. The
+**post-navigation auth re-sequencing** (pause fires after navigation, retry in-context) is
+flow logic in non-exempt `cli.py`, pinned by the **no-mock smoke** (layer 4). The
+*condition-based waiting* itself lives in the coverage-exempt adapter (live timing).
+
+The **irreducibly-live residue** is now precisely two behaviours, both `[no-oracle]`/DEFERRED
+and distinct from "done": (1) does the SPA render within the bounded wait (T026 guided run),
+and (2) **does the persistent session survive a relaunch without re-2FA** (T031 — *blocking*:
+if it does not, the operator re-does two-step verification every run, which is unacceptable,
+so the change cannot reach live-verified). Selector-value drift is the cheap case; the
+expensive cases are rendering-lifecycle and session-lifetime (spec §3.3).
 
 ## 2. Architecture Decisions
 
@@ -88,6 +100,35 @@ single deferred, tool-driven `discuss validate` run (T026) whose state is distin
   wrong-target; configurable off in `config.py`.
 - **Fail-loud, no retry-storm** (FR-014, P-I): typed errors name the failing step; at most
   one bounded human-paced retry on a transient load timeout.
+- **Condition-based waiting, never pre-render reads** (FR-004, Escalation #2). The portal is
+  a client-rendered SPA, so `go_to_discussions`/`open_discussion`/`extract_prompt` replace
+  `wait_until="domcontentloaded"` + immediate `query_selector` with
+  `page.wait_for_selector(rows OR login-marker, timeout=<human-paced, ~20s>)` (or
+  `networkidle`). `wait_for_selector` is an efficient mutation-observer wait, **not** a tight
+  poll — consistent with P-I. On timeout: `SelectorMiss` naming the step. FR-018's
+  self-snapshot moves to **after** the wait so the diagnostic captures rendered markup, not
+  the pre-render shell. *Alternative considered:* fixed `sleep()` — rejected (either too slow
+  or racy; not condition-based).
+- **Auth check is post-navigation, in-context, retried once** (FR-002/FR-003, Escalation #2).
+  `ensure_logged_in` moves to **after** the first portal navigation (so it sees the SSO
+  redirect): navigate → wait → `classify_landing` → if `login`, pause for manual login in the
+  *same* context, then **retry the navigation once** (the just-established session is valid in
+  that context) → proceed. The pre-navigation `about:blank` auth check is removed (it could
+  never see a redirect). This re-opens the G3-certified `run`/`validate` flow — which is what
+  an escalation does; the no-mock smoke (T024) is extended to gate the new seam.
+- **Login detection covers the pre-render SPA shell, offline** (FR-003, Escalation #2). The
+  pre-render shell carries no post-render marker, so `is_login_page`/`classify_landing` also
+  keys on the shell's stable pre-render markers (`<title>Login</title>` + ForgeRock
+  `data-testid="fr-body-image"`, with the URL-host fallback). Because we captured the real
+  shell, this is a **non-exempt, offline** oracle in `portal_parse` — not a live residue.
+- **Session persistence is a blocking precondition, not a deferred convenience** (FR-002/
+  SC-008, Escalation #2). The whole-point UX ("log in once, then it just works") fails if a
+  relaunch forces re-2FA. The design keeps the tool-owned persistent profile and instructs
+  the operator to choose any "keep me signed in / trust this device" option at first login so
+  ForgeRock issues persistent (not session-only) SSO cookies; T031 validates that a *second*
+  run skips re-auth. *Contingency if persistence is genuinely impossible:* attach to the
+  operator's already-authenticated running browser via CDP (`connect_over_cdp`) — a spec-level
+  auth-model change, re-decided with the operator, **not** built speculatively here.
 - **Human validation is the tool's job, not the operator's** (FR-017, Escalation #1). The
   retired model dumped the live work on the operator: paste an 80-line throwaway capture
   script, juggle stale browser tabs, hand-record selectors in devtools, then walk four
@@ -117,7 +158,7 @@ discuss/
     config.py         # profile dir, target class id(s), confirm flag, editor cmd, run-root
     browser.py        # [COVERAGE-EXEMPT] persistent-context lifecycle + login detection/pause
     portal_adapter.py # [COVERAGE-EXEMPT] live navigate/extract/fill; runtime field-type detect; SELECTOR constants
-    portal_parse.py   # PURE: parse_due_dates(), select_soonest_due(), extract_prompt_text()
+    portal_parse.py   # PURE: parse_due_dates(), select_soonest_due(), extract_prompt_text(), is_login_page(), classify_landing() [Esc#2]
     handoff.py        # make_run_dir(), write_prompt(), render_workflow(), run_session(), read_response()
     errors.py         # typed errors: NotAuthenticated, NoUpcomingDiscussion, SelectorMiss, FillVerifyFailed, EmptyResponse
   templates/
@@ -125,7 +166,8 @@ discuss/
   launcher/
     discuss.desktop     # freedesktop entry
     launch.sh           # opens a terminal running `discuss`
-  fixtures/             # saved REAL HTML captured live: login_page.html, discussions_list.html, discussion_page.html, reply_form.html
+  fixtures/             # saved REAL HTML captured live: login_page.html, discussions_list.html, discussion_page.html, reply_form.html,
+                        #   login_shell_prerender.html [Esc#2 — the captured pre-render ForgeRock SPA shell, from evidence-navigate_live.html]
   tests/
     conftest.py
     test_config.py
@@ -139,6 +181,8 @@ discuss/
     test_no_creds.py              # structural: no credential write; only the profile dir is touched (FR-002)
     test_validate.py              # `discuss validate` flow: single-keypress confirms; DOM self-snapshot on miss (FR-017/018)
     test_adapter_logic.py         # offline oracles for exempt-module behavior: login-pause logic (FR-003) + no-retry on selector miss (FR-016)
+    test_landing_classify.py      # [Esc#2] classify_landing/is_login_page vs login_shell_prerender.html + discussions_list.html (FR-003/FR-018)
+    test_auth_sequencing.py       # [Esc#2] no-mock smoke: pause fires AFTER navigation + in-context retry (FR-002/FR-003); extends test_main_smoke.py
   docs/
     SELECTOR-CAPTURE.md     # operator checklist: capture live selectors + verify live steps
 ```
@@ -165,10 +209,21 @@ discuss/
 3. **`claude` priming contract** (does cwd `CLAUDE.md` reliably drive the workflow?).
    Mitigation: run in the run dir; validate by a live session run (T009). Recovery cost:
    adjust `handoff.run_session()` (e.g. pass the prompt as an initial argument).
-4. **Session expiry mid-run.** Mitigation: login-detection + manual-login pause (FR-003).
-   Recovery cost: low — operator logs in, run continues.
+4. **Session expiry mid-run.** Mitigation: post-navigation login-detection + manual-login
+   pause + in-context retry (FR-003). Recovery cost: low — operator logs in, run continues.
 5. **Wrong-target selection.** Mitigation: confirmation gate (FR-005). Recovery cost: low —
    operator declines.
+6. **Session does not persist across launches → re-2FA every run (Escalation #2, BLOCKING).**
+   This breaks the tool's core UX premise (FR-002) and is unacceptable to the operator.
+   Mitigation: persistent profile + operator selects "keep me signed in / trust this device"
+   so persistent SSO cookies are issued; **validated by T031** (a second run must skip
+   re-auth). If persistence is genuinely impossible, recovery is the CDP attach-to-running-
+   browser contingency — a re-decided spec change, higher cost. The change stays PROVISIONAL
+   until T031 confirms persistence-without-re-2FA (SC-008).
+7. **Client-rendered SPA read pre-render (Escalation #2).** Mitigation: condition-based
+   waiting (FR-004) + post-render diagnostic snapshot (FR-018). The classification *decision*
+   is offline-pinned (`classify_landing`); only the wait *timing* is live (T026). Recovery
+   cost: low — adapter-local wait tuning.
 
 ### Assumptions
 1. Operator is on Linux with a desktop environment and `claude` on PATH.

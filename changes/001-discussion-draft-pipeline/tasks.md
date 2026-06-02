@@ -7,8 +7,8 @@ phase: tasks
 
 # Tasks: `discussion-draft-pipeline`
 
-**Status:** v1
-**Date:** 2026-06-01
+**Status:** v2 (post-Escalation #2: Phase 9 added)
+**Date:** 2026-06-02
 **Companion to:** `spec.md` and `plan.md`
 
 **Input**: `changes/001-discussion-draft-pipeline/{spec.md, plan.md}`.
@@ -1200,22 +1200,29 @@ are coverage-exempt, so G2 does not fire (the tests are the oracle).
 
 ---
 
-### T026 [LIVE] — Single smooth guided validation run (DEFERRED — live-unverified)
+### T026 [LIVE] [depends: T030] — Single smooth guided validation run (DEFERRED — live-unverified)
 
 **Files touched:** none (this is the one irreducible human-in-the-loop run; it may *produce*
-`fixtures/*_live.html` if a selector has drifted).
+`fixtures/*_live.html` — now post-render, FR-018 — if a selector has drifted).
 
 **Expected behavior (residue of FR-003/FR-004/FR-006/FR-010/FR-011/FR-012; SC-005):** the
-operator runs `discuss validate` once against the live, logged-in portal — logs in by hand
-when the browser opens, then presses `y`/`n` at each narrated checkpoint. This is the *only*
-manual validation, and it **replaces** the four retired checklists (old
-T009/T013/T016/T019). Passing it flips the change PROVISIONAL → live-verified.
+operator runs `discuss validate` once against the live portal. Post-Escalation #2 the run
+exercises the **redesigned** flow: navigate → **wait for render** → **classify landing**;
+if the SSO login shell appears, the tool **pauses for manual login in the same window**
+(FR-003), the operator logs in by hand (choosing any *"keep me signed in / trust this
+device"* option presented — this seeds the persistence T031 checks), the tool **retries the
+navigation once**, then proceeds; the operator presses `y`/`n` at each narrated checkpoint
+(found discussion / extracted prompt / filled sample). This validates that the SPA renders
+within the bounded wait and that the post-navigation login pause actually fires — the two
+things the first live run proved broken. It **replaces** the four retired checklists (old
+T009/T013/T016/T019). Passing it (with T031) flips the change PROVISIONAL → live-verified.
 
 - [ ] **T026 — DEFERRED (live-unverified).** Not a build task; the agent MUST NOT check
   this box. Its oracle is the operator's single-keypress confirmations during the guided
-  run — the only irreducibly-live oracle left (T025's flow logic is already offline-tested).
-  If the operator defers it, the tool ships honestly labeled **"code-verified,
-  live-unverified"**, never "done". US1 is independently *done* regardless.
+  run — render-timing and the live login redirect are irreducibly live (the classification
+  *decision* and auth *sequencing* are already offline-tested by T028/T029). If the operator
+  defers it, the tool ships honestly labeled **"code-verified, live-unverified"**, never
+  "done". US1 is independently *done* regardless.
 
 ### Tests
 - **[LIVE] oracle:** the guided run's per-checkpoint operator confirmations.
@@ -1227,6 +1234,146 @@ WHEN the operator completes the guided validation run with all checkpoints confi
 **Acceptance criterion:** Either run green by the operator (→ live-verified), or it stands
 DEFERRED and the change stays PROVISIONAL — the two states are distinct and neither is "done
 while unverified".
+
+---
+
+## Phase 9 — Escalation #2 correctives (SPA-render + auth-flow + persistence)
+
+> **Why this phase.** The first live `discuss validate` proved the deferred live residue's
+> *shape* was architectural, not a selector-value swap: a client-rendered SPA read
+> pre-render, an SSO redirect the pre-navigation auth check could never see, and a session
+> that may not survive a relaunch (forcing re-2FA — operator-unacceptable). T028/T029 are
+> **offline** agent work the first pass wrongly assumed was live (the captured pre-render
+> shell makes login-classification a real fixture oracle; auth re-sequencing is flow logic
+> under the no-mock smoke). T030 is the coverage-exempt live adapter change. **T031** is the
+> single new *blocking* live check: a second run must skip re-auth/2FA. The change stays
+> PROVISIONAL until T026 **and** T031 pass.
+
+### T028 [TDD] [REVIEW] [depends: T006] — Login-shell classification offline oracle (FR-003, FR-018; Esc#2)
+
+**Files touched:** create `fixtures/login_shell_prerender.html` (copied verbatim from the
+captured `changes/001-discussion-draft-pipeline/evidence-navigate_live.html`); extend
+`src/discuss/portal_parse.py`; create `tests/test_landing_classify.py`. `portal_parse.py` is
+non-exempt → **G2 fires**.
+
+**Expected behavior:** Add a pure `classify_landing(url, html) -> "login" | "discussions" |
+"unknown"` and broaden `is_login_page` so the **pre-render** ForgeRock SPA shell is
+recognized as a login page. The shell carries none of the post-render
+`"University of Phoenix Login"` marker — key instead on its stable pre-render markers
+(`<title>Login</title>` **and** `data-testid="fr-body-image"`, plus the IdP/`/login` URL-host
+fallback), without false-positiving the real discussions list. `classify_landing` returns
+`discussions` when the discussion-rows selector resolves in the markup, `login` on the login
+shell, else `unknown`. This is the offline oracle the first pass assumed was live — the
+captured shell IS the fixture (Escalation #2 corrective: a captured-on-failure artifact is a
+new offline oracle, not just a re-capture target).
+
+- [ ] **T028** — RED first: tests fail against today's `is_login_page` (the pre-render shell
+  is NOT detected). GREEN: classify/predicate recognizes it. Proven falsifiable.
+
+### Tests
+- `test_classify_prerender_login_shell` — `classify_landing(url, <login_shell_prerender.html>) == "login"` **and** `is_login_page(url, shell) is True` (the bug the first live run hit).
+- `test_classify_discussions_list` — `classify_landing(url, <discussions_list.html>) == "discussions"`.
+- `test_classify_unknown_markup` — arbitrary HTML → `"unknown"` (so a real selector miss is still distinguishable from a login redirect).
+- existing `test_is_login_page_*` (post-render `login_page.html`) still pass — no regression.
+
+```ears
+WHEN a portal navigation lands on the client-rendered login shell, the tool SHALL classify it as a login page from the pre-render markup (not as a selector miss). [test: test_classify_prerender_login_shell]
+```
+
+**Acceptance criterion:** Tests pass; falsifiable (revert the predicate change → `test_classify_prerender_login_shell` REDs).
+
+---
+
+### T029 [TDD] [REVIEW] [depends: T028, T017, T024] — Re-sequence auth post-navigation + in-context retry (FR-002, FR-003; Esc#2)
+
+**Files touched:** `src/discuss/cli.py`; extend `tests/test_main_smoke.py` (and/or
+`tests/test_auth_sequencing.py`). `cli.py` is non-exempt → **G2 fires**.
+
+**Expected behavior:** Remove the pre-navigation `ensure_logged_in(page)` call on the fresh
+`about:blank` page in **both** `run` (cli.py:104) and `_run_validate` (cli.py:218) — it can
+never see a post-navigation redirect. Replace with: navigate → wait → `classify_landing`; on
+`login`, pause for manual login (FR-003) in the **same** context, then **retry the navigation
+once** and re-classify; on `discussions`, proceed; on `unknown`, `SelectorMiss`. The adapter's
+`go_to_discussions` raises `NotAuthenticated` (not `SelectorMiss`) on a login landing so the
+orchestrator can branch. At most one bounded human-paced retry (FR-014/FR-016 — no storm).
+
+**Smoke (no-mock, extends T024):** drive the real `run`/`_run_validate` wiring with a stubbed
+browser whose first navigation lands on a `login` classification and whose retry lands on
+`discussions`; assert (a) the manual-login pause was invoked **after** navigation, (b) exactly
+one retry occurred, (c) a defined downstream state is reached — only the outermost browser
+boundary stubbed, no internal seam faked (the SC-006 discipline).
+
+- [ ] **T029** — RED first (the pre-nav auth check / no-retry path); GREEN after re-sequencing.
+
+### Tests
+- `test_auth_pause_is_post_navigation_with_retry` — the pause fires after the first navigation and the navigation is retried exactly once in-context before proceeding; no pre-nav auth check runs.
+- `test_login_landing_raises_not_authenticated` — a login classification routes to the pause path, not a `SelectorMiss`.
+
+```ears
+WHEN a portal navigation lands on the login page, the tool SHALL pause for manual login after navigation and retry the navigation once in the same context before proceeding, and SHALL NOT run the auth check before the first portal navigation. [test: test_auth_pause_is_post_navigation_with_retry]
+```
+
+**Acceptance criterion:** Tests pass; G2 (spec-match + quality) clears; the no-mock smoke gates the new seam.
+
+---
+
+### T030 [LIVE] [no-review] [depends: T028, T029] — Condition-based waiting + post-render snapshot (FR-004, FR-016, FR-018; Esc#2)
+
+**Files touched:** `src/discuss/portal_adapter.py` (coverage-exempt live Playwright → **G2
+does not fire**; live-verified by T026/T031).
+
+**Expected behavior:** Across `go_to_discussions` / `open_discussion` / `extract_prompt`,
+replace `wait_until="domcontentloaded"` + immediate `query_selector` with
+`page.wait_for_selector("<rows> , <login-marker>", timeout=<human-paced, ~20s>)` (an efficient
+mutation-observer wait, **not** a tight poll — P-I), then `classify_landing(page.url,
+page.content())`: `login` → `NotAuthenticated`; `discussions`/prompt present → proceed; timeout
+/`unknown` → `SelectorMiss` naming the step. **FR-018 fix:** the `validate` self-snapshot
+(cli.py) now fires *after* the wait, so the captured `<step>_live.html` is post-render, not the
+1.6 KB shell. The classification *decision* is offline-pinned (T028); only the *wait timing* is
+live.
+
+- [ ] **T030 — DEFERRED for live behavior.** The codeable decision logic it calls is offline
+  (T028); the wait timing is verified by the T026/T031 live runs. Agent implements; live
+  behavior is not auto-checked.
+
+### Tests
+- No new offline test owns the live wait (exempt). The decision it delegates to is covered by T028; the post-render snapshot timing is observed in T026/T031.
+
+```ears
+WHEN navigating a portal page, the tool SHALL wait for the rendered content (discussion rows or the login marker) within a bounded human-paced timeout and SHALL NOT read or snapshot the DOM pre-render. [no-oracle]
+```
+
+**Acceptance criterion:** Implemented; live render-timing confirmed in T026; no offline regression (T028/T029 still green).
+
+---
+
+### T031 [LIVE] [depends: T026, T030] — Session-persistence (no re-2FA) live validation (FR-002, SC-008; **BLOCKING**) (DEFERRED — live-unverified)
+
+**Files touched:** none (live coordination; may produce post-render `fixtures/*_live.html`).
+
+**Expected behavior (residue of FR-002/SC-008):** In **one** operator sitting, immediately
+after a successful T026 run (where the operator chose *"keep me signed in / trust this
+device"* at login), the operator runs `discuss validate` a **second** time **without** logging
+in. **PASS** iff the second run reaches the discussions list (and a filled sample reply)
+**without a fresh manual login and without repeating two-step verification**. **FAIL** iff it
+lands back on the SSO login shell — persistence is broken; the operator records the finding and
+the change **cannot** reach live-verified. This is the blocking precondition the operator's
+2FA constraint created: re-doing 2FA every run is unacceptable.
+
+- [ ] **T031 — DEFERRED (live-unverified), BLOCKING.** Not a build task; the agent MUST NOT
+  check this box. On FAIL, the tool-owned persistent-profile model is disproven and the
+  contingency (attach to the operator's already-authenticated running browser via CDP) is a
+  **new spec-level fork** — re-escalate, do not silently adopt. The change stays PROVISIONAL
+  until this PASSes or the operator accepts an alternative auth model.
+
+### Tests
+- **[LIVE] oracle:** the second run reaching content without re-auth — observed by the operator. No offline oracle exists (session persistence is irreducibly a property of the live IdP + the real profile across real launches).
+
+```ears
+WHEN a subsequent run starts after a prior authenticated run within the session's validity window, the tool SHALL reach the discussions list without a fresh manual login or repeated two-step verification. [no-oracle]
+```
+
+**Acceptance criterion:** Either PASS (→ contributes to live-verified with T026) or the change stays PROVISIONAL with the persistence finding recorded; never auto-checked.
 
 ---
 
@@ -1243,9 +1390,17 @@ while unverified".
 - **Phase 8 correctives (T021–T027, Escalation #1):** T021/T023 (structural oracles) and
   T022 (`file://` fill oracle) run in parallel after their targets exist (T015); T024
   (no-mock smoke) after T017; T025 (`discuss validate`) after T017/T012/T015/T006; T027
-  (pause-logic + no-retry offline oracles) after T006/T012; **T026** is the single
-  operator-run live validation — DEFERRED, gating PROVISIONAL → live-verified, never
-  auto-checked. US1 reaches *done* independently of all of Phase 8.
+  (pause-logic + no-retry offline oracles) after T006/T012; **T026** is operator-run live
+  validation — DEFERRED, gating PROVISIONAL → live-verified, never auto-checked. US1 reaches
+  *done* independently of all of Phase 8.
+- **Phase 9 correctives (T028–T031, Escalation #2):** **T028** (login-shell classification,
+  offline) after T006 — it unblocks the rest. **T029** (auth re-sequencing, offline smoke)
+  after T028/T017/T024. **T030** (condition-based waiting in the exempt adapter) after
+  T028/T029. **T026** now `[depends: T030]` (the guided run exercises the redesigned flow).
+  **T031** (persistence / no-re-2FA, **BLOCKING** live) after T026/T030. The change is
+  live-verified only when **both T026 and T031** pass; T031 FAIL re-escalates the auth model.
+  T028/T029 are agent work (zero operator burden); T030 is agent work, live-verified later;
+  T026+T031 are the single operator sitting (log in once, confirm, re-run once).
 
 Within each story: tests RED-first before implementation; respect every `[depends: …]`;
 commit after each task whose tests pass (and after G2 clears for `[REVIEW]` tasks).
@@ -1545,4 +1700,114 @@ for is, for this exact seam, structurally incapable of telling me whether the to
 works against the real portal.
 
 ### Generalizable Lesson
-_(To be written by design during escalation triage.)_
+
+The builder's load-bearing observation — "every fixture I had was a photograph of the
+portal *after* it finished painting, while the live tool was reading the DOM the instant it
+loaded" — names a failure mode that survives even a *perfect* application of Escalation #1's
+corrective. Escalation #1 retired **self-referential** oracles (fakes the author also wrote)
+and **waivable** oracles (checklists the operator could skip). This change had *neither*:
+every oracle here is non-mock and non-waivable, the suite is honestly 73/73 — and it still
+walked straight into a wall. The reason is a third oracle pathology, orthogonal to the first
+two:
+
+1. **Rule — a fixture is honest only at the lifecycle state the production code observes.**
+   "Use real captured HTML" (Constitution §2) is necessary but not sufficient. A real
+   snapshot taken *post-render* is a faithful photograph of a state the live code never reads
+   first, because the adapter queries *pre-render* (`wait_until="domcontentloaded"` +
+   immediate `query_selector`, portal_adapter.py:122-123/142-143). The HTML was real; it was
+   real *at the wrong moment*. Before trusting a captured fixture, name **when in the
+   target's state machine it was captured** and confirm the code under test reads it at that
+   same point. A timing/lifecycle-state mismatch is invisible to "is this real HTML?" — the
+   HTML is real, only the moment is wrong. This is **P-IV (observed effect ≠ reported
+   success)** turned on the *observation instrument*: the fixture reported "this is the
+   portal," but the effect the live code sees is a different, earlier state.
+
+2. **Pattern — a self-diagnostic inherits the bug it diagnoses if it fires at the same
+   broken moment.** FR-018's self-snapshot was a genuinely good mechanism, but because it
+   captured at the same pre-render instant the miss was detected, it photographed the 1.6 KB
+   un-rendered shell instead of useful markup — the diagnostic was exactly as blind as the
+   failure it was meant to explain. When you build a capture-on-failure diagnostic, capture
+   at the lifecycle point where the **information is present** (post-render), which is
+   deliberately a *different* point than where the failure tripped.
+
+3. **Precedent — when you defer an irreducibly-live residue, name its possible SHAPES, not
+   just its cheapest one.** The spec *correctly* named a deferred live residue — but described
+   it only as "do today's captured selectors still match the live portal," framing the live
+   risk as a one-file selector-*value* swap with a one-file recovery. The actual live risk was
+   architectural: a client-rendered SPA + an SSO redirect + a possibly non-persistent
+   session, whose recovery is a cross-cutting redesign of navigation, auth-sequencing, and
+   capture timing. Under-specifying the *shape* of a deferred risk makes the plan
+   under-provision for it (a "one-file fix" recovery budget against a cross-cutting-redesign
+   reality). A deferred-live item must enumerate the *kinds* of failure it stands in for —
+   value drift? rendering-lifecycle? auth-flow? session-lifetime? — so the recovery budget
+   matches the actual blast radius, not the cheapest imagined one. Grounding: this is the
+   environment/OS-primitive-lifetime + operation-success≠observed-effect cluster — two
+   load-bearing *environment* assumptions ("the portal renders server-side enough to read
+   immediately" and "the authenticated session survives a fresh launch") baked in silently
+   rather than surfaced as assumptions and routed to a validation item.
+
+**Corollary for this method, carrying Escalation #1 forward:** the builder concluded "every
+fix here is verifiable *only* live." That is itself an instance of pathology (2) — reasoning
+from the broken moment. FR-018's self-snapshot already produced `evidence-navigate_live.html`,
+a *real* pre-render ForgeRock shell; that artifact converts the login-detection fix into an
+**offline, non-exempt oracle** (`is_login_page` / a `classify_landing` predicate in
+`portal_parse`). The same corrective Escalation #1 demanded — *prove no offline oracle exists
+before stamping `[no-oracle]`* — applies recursively: a captured-on-failure artifact is not
+just a re-capture target, it is a new offline oracle. Only the *render-timing* and
+*session-persistence* behaviours are irreducibly live after that.
+
+### Resolution (design triage, 2026-06-02)
+
+Addressing the **Decision Needed (A–E)**, and reshaped by the operator's load-bearing
+constraint surfaced in triage — *"if the session doesn't persist the operator might need to
+perform a two-step verification too; that would not be acceptable to do every single time."*
+That single fact flips persistence from a deferrable convenience into a **blocking
+precondition**, and is why my first recommendation ("defer persistence, accept once-per-run
+login") was wrong and was overridden.
+
+- **(A) Condition-based waiting — ADOPTED** as **T030**. `wait_for_selector(rows OR
+  login-marker, bounded human-paced timeout)` replaces `domcontentloaded` + immediate query
+  across the three nav/extract methods; FR-018 snapshots *after* the wait. `wait_for_selector`
+  is mutation-observer-based, not a tight poll → P-I-clean. spec FR-004/FR-018 updated.
+- **(B) Re-sequence auth — ADOPTED** as **T029**. `ensure_logged_in` moves *after* the first
+  navigation, in the same context, with one bounded retry; the pre-nav `about:blank` check is
+  removed. This **re-opens the G3-certified `run`/`validate` flow** — which is exactly what an
+  escalation does (Escalation #1 did the same); the no-mock smoke (T024) is *extended*, not
+  bypassed, to gate the new seam. spec FR-003 updated.
+- **(C) Login detection for the SPA shell — ADOPTED, and OFFLINE** as **T028**. The builder's
+  framing "every fix here is verifiable only live" was itself the escalation's pathology #2
+  (reasoning from the broken moment): FR-018 already produced `evidence-navigate_live.html`, a
+  *real* pre-render ForgeRock shell. That artifact becomes `fixtures/login_shell_prerender.html`
+  and makes `classify_landing` / `is_login_page` a **real, non-exempt, falsifiable** oracle —
+  not a live residue. Login-classification and auth-sequencing both leave the `[no-oracle]`
+  column. spec adds the `test_classify_prerender_login_shell` and
+  `test_auth_pause_is_post_navigation_with_retry` criteria.
+- **(D) Session persistence — RESOLVED to BLOCKING (operator fork)** as **T031** + **SC-008**.
+  The persistence premise is *not* softened (my proposed softening was wrong against the 2FA
+  fact); it is *strengthened* into a measurable, blocking live check: a second run must reach
+  content **without re-login or re-2FA**. Mitigation in the design: the operator selects "keep
+  me signed in / trust this device" at first login so ForgeRock issues persistent SSO cookies.
+  Contingency if persistence is genuinely impossible: attach to the operator's already
+  authenticated running browser (CDP) — a **new spec-level fork**, re-escalated, not assumed.
+  FR-002/§5 updated; the change stays PROVISIONAL until T031 PASSes.
+- **(E) Verification model — RESOLVED.** The seam is *not* "verifiable only live." Split:
+  **offline-pinned** = login-classification (T028, real fixture) + auth re-sequencing (T029,
+  no-mock smoke); **irreducibly live** = SPA render-timing (T026) + session persistence (T031).
+  Two named DEFERRED items, both distinct from "done", neither hidden behind `[no-oracle]`
+  green. No standing fix→live-run loop is provisioned beyond these — the offline oracles now
+  catch regressions in everything except timing and persistence, which the one operator sitting
+  (T026 then T031) confirms.
+
+**Re-open the spec? — YES, done.** `spec.md` → **v0.3** (FR-002/003/004/018, SC-008, 4 new
+EARS criteria, §3.3 three-axis residue shape, §5 assumptions). `plan.md` → **v2** (the four
+redesign architecture decisions, the grown offline oracle layer, risks 6–7). `tasks.md` adds
+**Phase 9 (T028–T031)**. The handoff signature is reset to UNSIGNED — the artifacts changed,
+so the operator re-signs the corrected, G1-recleared plan (the floor is signature-independent;
+panel-before-sign-off).
+
+**Operator-facing scope:** US1 (reason-and-draft engine) remains genuinely *done*. The portal
+pipeline gains an offline-pinned redesign (T028/T029, agent work) plus a coverage-exempt
+adapter change (T030, agent work). The human's remaining burden is **one sitting**: run
+`discuss validate`, log in by hand once (choose "trust this device"), confirm the checkpoints,
+then run it a second time to confirm no re-2FA. If that second run still demands 2FA, the tool
+isn't acceptable as designed and the auth model re-escalates.

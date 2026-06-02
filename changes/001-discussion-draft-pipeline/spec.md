@@ -7,8 +7,8 @@ phase: specify
 
 # Spec: `discussion-draft-pipeline`
 
-**Status:** Draft
-**Date:** 2026-06-01
+**Status:** Draft (v0.3 — post-Escalation #2 triage)
+**Date:** 2026-06-02
 **Author:** design agent
 
 ## 0. Reader's Guide
@@ -154,8 +154,18 @@ live portal, ending with the reply field filled and unsubmitted on the correct d
 - **Operator already posted** to the soonest-due discussion: selection is by due date
   only; the confirmation gate lets the operator decline and the run ends cleanly.
   (Skipping already-answered discussions is a deliberate non-goal for v1.)
-- **Logged out / session expired mid-run**: pause and prompt for manual login, then
-  resume; never automate the login form.
+- **Logged out / session expired mid-run**: a portal navigation redirects to the SSO login;
+  detect the login landing *after* navigation, pause and prompt for manual login in the same
+  context, retry the navigation once, then resume; never automate the login form (FR-003).
+- **Navigation lands on an un-rendered SPA shell**: the portal is client-rendered, so the
+  DOM read immediately after `goto` may be an empty/login shell. Wait for the rendered
+  content (discussion rows *or* the login marker) within a bounded human-paced timeout
+  before classifying; never treat a pre-render read as a selector miss (FR-004).
+- **Session does not persist across launches (would force re-2FA every run)**: this is a
+  *blocking* live finding, not a silent degradation — if a subsequent run lands back on the
+  login shell, the persistence premise (FR-002) is broken; surface it (SC-008) and do not
+  mark the change live-verified. Contingency if unfixable: attach to the operator's already
+  authenticated running browser (a spec-level change, re-decided, not assumed here).
 - **Portal markup changed (selector miss)**: fail loud naming the exact failing step;
   the fix is confined to the adapter module (P-III).
 - **Reply field is neither a known textarea nor a known rich-text editor**: abort
@@ -180,12 +190,23 @@ live portal, ending with the reply field filled and unsubmitted on the correct d
   terminal for the interactive session.
 - **FR-002**: The tool MUST drive the portal through a tool-owned **persistent** browser
   profile that reuses the operator's existing authenticated session, and MUST NOT store
-  credentials anywhere.
-- **FR-003**: IF the operator is not authenticated, THEN the tool MUST pause and prompt
-  for manual login in the browser window, then continue — it MUST NOT automate credential
-  entry.
-- **FR-004**: The tool MUST navigate the fixed click-path (class → discussions) and select
-  the discussion with the **soonest upcoming due date** within the configured class(es).
+  credentials anywhere. **Session reuse is load-bearing (Escalation #2): a subsequent run
+  within the session's validity window MUST NOT require a fresh manual login NOR a repeated
+  two-step verification — the persistent profile MUST carry the operator's SSO /
+  trusted-device session across launches.** IF the portal's session genuinely cannot
+  persist across separate launches (so the operator would re-do 2FA every run), that is a
+  **blocking live finding** (SC-008), surfaced — never folded into "done".
+- **FR-003**: IF a portal navigation lands on the login screen (the operator is not
+  authenticated, or the session expired), THEN the tool MUST pause and prompt for manual
+  login in the browser window **after that navigation, within the same browser context**,
+  then **retry the navigation once** and continue — it MUST NOT automate credential entry.
+  The auth check MUST run **after the first portal navigation** (where a login redirect is
+  observable), NOT against the pre-navigation blank page (where no redirect is yet visible);
+  the manual-login pause is meaningless if it fires before navigation (Escalation #2).
+- **FR-004**: The tool MUST navigate the fixed click-path (class → discussions), **wait for
+  the discussions content to render** (the portal is a client-rendered SPA — the DOM MUST
+  NOT be read pre-render), and select the discussion with the **soonest upcoming due date**
+  within the configured class(es).
 - **FR-005**: The tool MUST present a confirmation gate naming the selected discussion and
   its due date before extracting, and MUST abort cleanly if the operator declines. The
   gate is on by default and configurable off.
@@ -227,7 +248,11 @@ live portal, ending with the reply field filled and unsubmitted on the correct d
 - **FR-018**: WHEN a selector fails to match the live portal, the tool MUST snapshot the
   current page markup to a fixture file **itself** (for re-capture and offline
   re-verification) and report which step failed naming the adapter as the one-file fix —
-  the operator MUST NOT hand-capture markup.
+  the operator MUST NOT hand-capture markup. **The snapshot MUST be taken after the page has
+  rendered (post-wait), so the diagnostic captures the rendered DOM rather than an
+  un-rendered SPA shell** (Escalation #2: the first self-snapshot captured a 1.6 KB
+  pre-render login shell because it fired at the same pre-render instant the miss was
+  detected — a diagnostic that fires at the broken moment inherits the bug).
 
 ### 3.2 Key Entities
 
@@ -256,8 +281,32 @@ we captured — and the structural tests prove no submit/credential path exists 
 build. What no offline test can prove is that today's captured selectors still match the
 *live* portal, or that the *real* logged-out page still triggers the login pause; that
 residue is irreducibly live. The method's failure in Escalation #1 was to let that residue
-hide behind `[no-oracle]` green and a waivable checklist. It is now surfaced as one named,
-deferred, tool-driven validation run (T026) — never silently folded into "done".
+hide behind `[no-oracle]` green and a waivable checklist. It is now surfaced as named,
+deferred, tool-driven validation runs (T026, T031) — never silently folded into "done".
+
+**The shape of the live residue (Escalation #2 correction).** The deferred-live risk was
+first described only as "do today's captured selectors still match" — i.e. a one-file
+selector-*value* swap with a one-file recovery. The first live run proved the residue's
+true shape is **architectural, not value-level**, across three axes, and a deferred-live
+item must name all of them so recovery is provisioned for the real blast radius (not the
+cheapest imagined one):
+
+1. **Rendering lifecycle.** The portal (Blackboard Ultra) and its IdP (ForgeRock) are
+   *client-rendered SPAs*; every captured fixture is a *post-render* snapshot, but the
+   adapter read the DOM *pre-render*. A real fixture is honest only at the lifecycle state
+   the production code observes — post-render markup is a faithful photo of a state the
+   live code never reads first. (FR-004 now mandates waiting for render; FR-018 now snapshots
+   post-render.)
+2. **Auth flow.** Navigating to a portal URL on an unauthenticated session *redirects to the
+   SSO login*; the auth check must run *after* navigation, in the same context, and retry
+   (FR-003). A pre-render login shell carries none of the post-render markers, so login
+   detection must key on the pre-render shell too — and, crucially, the captured shell
+   (`evidence-navigate_live.html`) makes that an **offline** oracle, not a live one.
+3. **Session lifetime.** "The session persists across launches" was a silent, load-bearing
+   *environment* assumption. If false, the operator re-does manual login — possibly
+   **two-step verification** — every run, which is unacceptable (operator directive,
+   Escalation #2). FR-002/SC-008 now make persistence-without-re-2FA a blocking, measurable
+   live requirement, not an assumed convenience.
 
 ## 4. Success Criteria *(mandatory)*
 
@@ -284,6 +333,13 @@ deferred, tool-driven validation run (T026) — never silently folded into "done
   no-credentials) is waivable-into-"done": each has an automatable offline oracle, and any
   irreducibly-live residue renders as an explicit **deferred / live-unverified** state
   distinct from "done", never as a checked box.
+- **SC-008**: A run subsequent to an authenticated run, within the session's validity
+  window, reaches the discussions list **without a fresh manual login and without repeating
+  two-step verification** (the FR-002 persistence guarantee, made measurable post-Escalation
+  #2). If the tool-owned persistent profile cannot carry the session across launches, that
+  is surfaced as a **blocking live finding**, never folded into "done"; the change stays
+  PROVISIONAL until persistence-without-re-2FA is confirmed (T031) or an explicit
+  alternative auth model is accepted.
 
 ### 4.2 Acceptance Criteria (EARS)
 
@@ -292,10 +348,13 @@ deferred, tool-driven validation run (T026) — never silently folded into "done
 > the human-pace criterion now have real offline tests; no-submit gains a *structural*
 > oracle on top of the orchestrator-level one; and the reply-fill logic is exercised
 > against the captured Quill fixture via `file://` (a controlled real boundary,
-> Constitution §2). What remains irreducibly live — *do today's captured selectors still
-> match the live portal, and does the real logged-out page trigger the pause* — is **not**
-> hidden here as `[no-oracle]`; it is a single named **deferred / live-unverified** item
-> (tasks T026) validated by one smooth guided run, distinct from "done" (SC-007).
+> Constitution §2). **Post-Escalation #2** adds two more *offline* oracles the first pass
+> wrongly assumed were live — login-shell classification (the captured pre-render ForgeRock
+> shell `evidence-navigate_live.html` is a real fixture) and post-navigation auth sequencing
+> (flow logic via the no-mock smoke). What remains irreducibly live — *does the SPA render in
+> time, and does the persistent session survive a relaunch without re-2FA* — is **not**
+> hidden here as `[no-oracle]`; it is named **deferred / live-unverified** items (T026 guided
+> run, T031 persistence run), distinct from "done" (SC-007/SC-008).
 
 ```ears
 WHEN the operator triggers a run and is authenticated, the tool SHALL select the discussion with the soonest upcoming due date. [test: test_select_soonest_due_from_fixture]
@@ -314,6 +373,10 @@ The tool SHALL confine every portal-specific selector to a single adapter module
 The tool SHALL persist the final response to disk before attempting write-back. [test: test_response_persisted_before_fill]
 WHEN discuss is invoked with a valid configuration, the tool SHALL reach a defined pipeline state through the real entry-point wiring and SHALL NOT crash in the integration seam. [test: test_main_smoke_reaches_defined_state]
 WHEN the operator runs guided validation, the tool SHALL drive each live check itself and gate it on a single-keypress operator confirmation. [test: test_guided_validation_uses_single_keypress_confirms]
+WHEN a portal navigation lands on the client-rendered login shell, the tool SHALL classify it as a login page from the pre-render markup (not as a selector miss). [test: test_classify_prerender_login_shell]
+WHEN a portal navigation lands on the login page, the tool SHALL pause for manual login after navigation and retry the navigation once in the same context before proceeding, and SHALL NOT run the auth check before the first portal navigation. [test: test_auth_pause_is_post_navigation_with_retry]
+WHEN navigating a portal page, the tool SHALL wait for the rendered content (discussion rows or the login marker) within a bounded human-paced timeout and SHALL NOT read or snapshot the DOM pre-render. [no-oracle]
+WHEN a subsequent run starts after a prior authenticated run within the session's validity window, the tool SHALL reach the discussions list without a fresh manual login or repeated two-step verification. [no-oracle]
 ```
 
 ## 5. Assumptions
@@ -321,7 +384,14 @@ WHEN the operator runs guided validation, the tool SHALL drive each live check i
 - The operator runs Linux with a desktop environment (for the launcher and a `--wait`
   capable GUI editor) and has Claude Code (`claude`) on PATH.
 - The operator logs into UOPX by hand once in the tool's persistent profile; the session
-  persists across runs until it expires.
+  then **persists across separate launches** until it expires — i.e. a later run does NOT
+  re-prompt login or two-step verification. **(Load-bearing and unvalidated as of Escalation
+  #2 — the live evidence is ambiguous; this is now a blocking live check, T031/SC-008, not an
+  assumed convenience. If the SSO session cannot persist across launches, the tool-owned
+  persistent-profile model fails and the contingency is attaching to the operator's already
+  authenticated running browser — a re-decided spec change, not assumed here.)**
+- The portal is a **client-rendered SPA** (Blackboard Ultra over a ForgeRock IdP): the DOM
+  must be read after it renders, never immediately after navigation (Escalation #2).
 - Discussions list a parseable due date in the discussions view (basis for selection).
 - The prompt content is plaintext once the discussion page is reached (stated by operator).
 - A `--wait`-capable GUI editor is available/configurable (default candidate: `code
@@ -352,3 +422,4 @@ WHEN the operator runs guided validation, the tool SHALL drive each live check i
 |---|---|---|---|
 | 0.1 | 2026-06-01 | design agent | Initial spec. |
 | 0.2 | 2026-06-02 | design agent | Escalation #1 triage. Added FR-017 (smooth in-tool human validation), FR-018 (tool self-captures markup on selector miss); replaced the 3 waivable `[no-oracle]` safety/pace criteria with automatable offline oracles + the structural no-submit and no-creds oracles + the file:// fill oracle + the no-mock smoke oracle; added SC-005..007 (zero human busy-work, program-provably-runs, safety-not-waivable-into-done); §3.3 offline-vs-live-residue honesty note. |
+| 0.3 | 2026-06-02 | design agent | Escalation #2 triage (assumption failure: client-rendered SPA + post-navigation SSO redirect + non-persistent session). FR-002 strengthened (persistence without re-2FA is load-bearing/blocking), FR-003 re-sequenced (pause *after* navigation, in-context retry), FR-004 (wait for render), FR-018 (snapshot post-render). Added SC-008 (persistence/no-re-2FA blocking live check) and 4 EARS criteria (2 offline: login-shell classification, post-nav auth sequencing; 2 live: render-wait, persistence). §3.3 now names the three-axis shape of the live residue (rendering lifecycle / auth flow / session lifetime). |
