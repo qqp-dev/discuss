@@ -46,7 +46,7 @@ fire G2 (they are exempt and live-verified); `config.py`, `portal_parse.py`, `ha
 ### T001 [SETUP] [no-review] — Project skeleton & packaging
 
 **Files touched:** Create `pyproject.toml`, `src/discuss/__init__.py`,
-`tests/conftest.py`, `.gitignore`.
+`src/discuss/cli.py` (stub), `tests/conftest.py`, `.gitignore`.
 
 **Expected behavior (FR-001):** An installable package exposing a `discuss` console
 script (entry `discuss.cli:main`), with Playwright + a pure-HTML parser (`selectolax`) +
@@ -77,10 +77,10 @@ pytest declared. `discuss --help` runs (even if the pipeline is a stub).
 
 ### T002 [SETUP] [LIVE] [no-review] — Capture live selectors, fixtures & operator setup
 
-**Files touched:** Create `fixtures/discussions_list.html`,
-`fixtures/discussion_page.html`, `fixtures/reply_form.html`; create
-`docs/SELECTOR-CAPTURE.md`; seed `src/discuss/portal_adapter.py` SELECTOR constants
-(values filled from capture).
+**Files touched:** Create `fixtures/login_page.html`,
+`fixtures/discussions_list.html`, `fixtures/discussion_page.html`,
+`fixtures/reply_form.html`; create `docs/SELECTOR-CAPTURE.md`; seed
+`src/discuss/portal_adapter.py` SELECTOR constants (values filled from capture).
 
 **Expected behavior (FR-013, spec §3.3):** Against the **live, logged-in** UOPX portal,
 the operator captures the real markup and records the real selectors for: the class
@@ -90,9 +90,9 @@ coordination/verification item — its oracle is the checklist, not a unit test.
 
 - [ ] **T002**
   - Install browsers: `python -m playwright install chromium`.
-  - Open the persistent profile once and log in by hand; save the discussions-list page,
-    one discussion page, and the reply-form page as the three fixtures (use
-    `page.content()` or browser "Save As → HTML").
+  - Open the persistent profile once. Save the **logged-out login page** first, then log
+    in by hand and save the discussions-list page, one discussion page, and the reply-form
+    page — four fixtures total (use `page.content()` or browser "Save As → HTML").
   - Record each selector + the due-date string format in `docs/SELECTOR-CAPTURE.md`, and
     write them into `portal_adapter.py` `SELECTORS = {...}` constants.
   - `docs/SELECTOR-CAPTURE.md` doubles as the **re-verification checklist** (run it after
@@ -105,7 +105,7 @@ coordination/verification item — its oracle is the checklist, not a unit test.
 - **Non-goals for testing:** no automated test hits the live portal (Constitution §2, P-I).
 
 ```ears
-The tool SHALL confine every portal-specific selector to a single adapter module. [no-oracle]
+The tool SHALL confine every portal-specific selector to a single adapter module. [test: test_selectors_confined_to_adapter]
 ```
 
 **Acceptance criterion:** Three real fixtures committed; `SELECTORS` populated; the
@@ -240,12 +240,11 @@ IF the saved response is missing or whitespace-only, THEN the tool SHALL raise r
 
 ---
 
-### T006 [FOUND] [no-review] — Persistent browser context & auth predicate
+### T006 [FOUND] [no-review] [depends: T002] — Persistent browser context & auth predicate
 
-**Files touched:** Create `src/discuss/browser.py` (coverage-exempt). Add
-`tests/test_auth_predicate.py` **only if** the auth predicate is factored as a pure
-function (see below) — that pure function then lives in `portal_parse.py`, not
-`browser.py`.
+**Files touched:** Create `src/discuss/browser.py` (coverage-exempt); add the pure
+`is_login_page` predicate to `src/discuss/portal_parse.py`, with its tests in
+`tests/test_portal_parse.py` (no separate test file).
 
 **Expected behavior (FR-002, FR-003):** `open_persistent_context(profile_dir) ->
 (context, page)` using `launch_persistent_context` (no credentials stored). A pure
@@ -490,7 +489,8 @@ WHEN the discussion page is loaded, the tool SHALL return its prompt as normaliz
 
 ### T012 [US2] [LIVE] [no-review] [depends: T010, T011, T006] — Live navigate & extract
 
-**Files touched:** Modify `src/discuss/portal_adapter.py` (coverage-exempt).
+**Files touched:** Modify `src/discuss/portal_adapter.py` (coverage-exempt); create
+`tests/test_selector_confinement.py`.
 
 **Expected behavior (FR-004, FR-006, FR-016):** Adapter methods using the captured
 selectors + `portal_parse`: `go_to_discussions(page, class_id)`, `list_discussions(page)
@@ -501,11 +501,25 @@ page loads; raises `SelectorMiss` naming the step on any missing selector.
 - [ ] **T012** — implement against captured selectors; verify live (checklist T013).
 
 ### Tests
+```python
+# tests/test_selector_confinement.py
+import pathlib
+
+def test_selectors_confined_to_adapter():
+    # FR-013/SC-002: portal selectors live ONLY in the adapter module.
+    src = pathlib.Path("src/discuss")
+    offenders = [p.name for p in src.glob("*.py")
+                 if p.name != "portal_adapter.py" and "SELECTORS" in p.read_text()]
+    assert offenders == []
+```
+- **Unit:** `test_selectors_confined_to_adapter` — falsifiable: adding `SELECTORS` to any
+  non-adapter module reds it (FR-013/SC-002). Runs without the live portal.
 - **[LIVE] oracle:** T013 checklist (lands on soonest-due; extracted text matches page).
 - **Non-goals for testing:** no automated live hit (parsing already covered by T010/T011).
 
 ```ears
 WHILE a run is in progress, the tool SHALL act at human pace and SHALL NOT issue automated retry loops against the portal. [no-oracle]
+The tool SHALL define portal selectors only in the single adapter module. [test: test_selectors_confined_to_adapter]
 ```
 
 **Acceptance criterion:** Adapter wired to selectors + parse; raises `SelectorMiss` loudly.
@@ -657,6 +671,12 @@ def test_confirm_decline_aborts(fake_ctx):
     assert fake_ctx.adapter.extracted is False
     assert fake_ctx.adapter.filled is False
 
+def test_confirm_gate_names_discussion(fake_ctx):
+    # FR-005: the confirmation gate names the selected discussion and its due date.
+    cli.run(**fake_ctx.kwargs)
+    assert fake_ctx.selected.title in fake_ctx.gate_prompt
+    assert str(fake_ctx.selected.due_date) in fake_ctx.gate_prompt
+
 def test_no_upcoming_due_stops(fake_ctx):
     # FR-014: nothing upcoming → stop, no fill.
     fake_ctx.adapter.discussions = []  # select_soonest_due → None
@@ -681,21 +701,26 @@ def test_fill_does_not_submit(fake_ctx):
     assert fake_ctx.adapter.submitted is False
 
 def test_fill_verify_mismatch_aborts(fake_ctx):
-    # FR-012: a fill that fails read-back preserves the response and does not submit.
+    # FR-012: a failed read-back aborts write-back, preserves the response, AND tells the
+    # operator to paste manually — assert all three limbs of the criterion.
     fake_ctx.adapter.fill_raises = FillVerifyFailed("read-back mismatch")
     cli.run(**fake_ctx.kwargs)
-    assert (fake_ctx.run_dir / "response.md").exists()
-    assert fake_ctx.adapter.submitted is False
+    assert (fake_ctx.run_dir / "response.md").exists()       # preserved
+    assert fake_ctx.adapter.submitted is False               # aborted: never submitted
+    assert "paste" in fake_ctx.last_message.lower()          # manual-paste instruction
 ```
 - **Edge cases:** `NotAuthenticated` surfaces from `ensure_logged_in`; `SelectorMiss`
   mid-pipeline preserves any response and reports the step.
 - **Non-goals:** live browser/session (T019).
 - **Fixtures:** `fake_ctx` builds a `FakeAdapter` (flags: `extracted`, `filled`,
-  `submitted`, `response_existed_at_fill`, `fill_raises`, `discussions`), a stub
-  `run_session` writing a non-empty `response.md`, and the `kwargs` for `cli.run`.
+  `submitted`, `response_existed_at_fill`, `fill_raises`, `discussions`), exposes
+  `selected` (the chosen discussion), and captures the confirmation `gate_prompt` and the
+  operator-facing `last_message` reported by `cli.run`; plus a stub `run_session` writing a
+  non-empty `response.md`, and the `kwargs` for `cli.run`.
 
 ```ears
 WHEN the operator declines the confirmation gate, the tool SHALL abort the run without extracting anything. [test: test_confirm_decline_aborts]
+WHEN a discussion is selected, the tool SHALL present a confirmation naming the discussion and its due date. [test: test_confirm_gate_names_discussion]
 WHEN the operator confirms the gate, the tool SHALL write the extracted plaintext prompt to the run dir. [test: test_extracted_prompt_written]
 IF no discussion has an upcoming due date, THEN the tool SHALL stop and report. [test: test_no_upcoming_due_stops]
 WHEN the session completes, the tool SHALL fill the reply without submitting it. [test: test_fill_does_not_submit]
@@ -797,3 +822,4 @@ items — their oracle is `docs/SELECTOR-CAPTURE.md`, not pytest.
 
 | Gate | Anchor | Verdict | Key findings |
 |------|--------|---------|--------------|
+| G1 | spec.md + plan.md + tasks.md | clear (+ no-oracle residue) | testability / completeness-consistency / scope all PASS after 2 design bounces. Fixed: selector-confinement made testable (was `[no-oracle]`), multi-limb fill-mismatch now asserts all three limbs, stale plan task-id refs (§3/§4/§5), bidirectional file-map gaps (cli.py, test_selector_confinement.py, dangling test_auth_predicate.py), login-page fixture added. **Residue (FR-015):** the live-portal + interactive-session criteria are `[no-oracle]` and verified by the operator checklist in `docs/SELECTOR-CAPTURE.md` during execute — not by automated tests. |

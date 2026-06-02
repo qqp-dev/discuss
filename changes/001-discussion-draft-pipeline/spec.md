@@ -256,7 +256,8 @@ contained by FR-013 (one adapter module) and re-verified whenever the portal cha
 ### 4.2 Acceptance Criteria (EARS)
 
 ```ears
-WHEN the operator triggers a run and is authenticated, the tool SHALL select the discussion with the soonest upcoming due date and display a confirmation naming it and its due date. [test: test_select_soonest_due_from_fixture]
+WHEN the operator triggers a run and is authenticated, the tool SHALL select the discussion with the soonest upcoming due date. [test: test_select_soonest_due_from_fixture]
+WHEN a discussion is selected, the tool SHALL display a confirmation naming that discussion and its due date before extracting. [test: test_confirm_gate_names_discussion]
 IF the operator is not authenticated when a run starts, THEN the tool SHALL pause and prompt for manual login before proceeding. [no-oracle]
 WHEN the operator declines the confirmation gate, the tool SHALL abort the run without extracting anything. [test: test_confirm_decline_aborts]
 WHEN the operator confirms the gate, the tool SHALL write the extracted plaintext prompt to the run dir. [test: test_extracted_prompt_written]
@@ -265,7 +266,7 @@ IF the reply field cannot be located or the read-back does not equal the intende
 IF no discussion has an upcoming due date, THEN the tool SHALL stop and report rather than select a past or arbitrary discussion. [test: test_no_upcoming_due_stops]
 WHILE a run is in progress, the tool SHALL act at human pace and SHALL NOT issue automated retry loops against the portal. [no-oracle]
 The tool SHALL store no portal credentials on disk. [no-oracle]
-The tool SHALL confine every portal-specific selector to a single adapter module. [no-oracle]
+The tool SHALL confine every portal-specific selector to a single adapter module. [test: test_selectors_confined_to_adapter]
 The tool SHALL persist the final response to disk before attempting write-back. [test: test_response_persisted_before_fill]
 ```
 

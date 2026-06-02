@@ -71,6 +71,8 @@ freedesktop `.desktop` launcher, a `--wait`-capable GUI editor.
 ```
 discuss/
   pyproject.toml
+  .gitignore
+  README.md
   src/discuss/
     __init__.py
     cli.py            # `discuss` entry point + the orchestrator/pipeline (wires US1–US3)
@@ -85,13 +87,14 @@ discuss/
   launcher/
     discuss.desktop     # freedesktop entry
     launch.sh           # opens a terminal running `discuss`
-  fixtures/             # saved REAL HTML captured live: discussions_list.html, discussion_page.html, reply_form.html
+  fixtures/             # saved REAL HTML captured live: login_page.html, discussions_list.html, discussion_page.html, reply_form.html
   tests/
     conftest.py
     test_config.py
-    test_portal_parse.py   # against fixtures/
+    test_portal_parse.py          # against fixtures/ (parsing + is_login_page predicate)
     test_handoff.py
-    test_cli_pipeline.py    # adapter mocked
+    test_cli_pipeline.py          # adapter + session mocked
+    test_selector_confinement.py  # FR-013 static check (no live portal)
   docs/
     SELECTOR-CAPTURE.md     # operator checklist: capture live selectors + verify live steps
 ```
@@ -101,10 +104,10 @@ discuss/
 | ID | Question | Placeholder | Resolved By |
 |----|----------|-------------|-------------|
 | Q1 | Exact UOPX selectors for class→discussions click-path, prompt container, and reply field | Captured live, then written into `portal_adapter.py` SELECTOR constants | T002 (selector-capture, live) |
-| Q2 | Reply-field type — plain textarea vs rich-text/contenteditable | Detect at runtime; handle both | T012 (US3 fill) |
-| Q3 | Due-date string format on the discussions list | Discover from `fixtures/discussions_list.html`; parse in `portal_parse.parse_due_dates()` | T007 (US2 parse) |
+| Q2 | Reply-field type — plain textarea vs rich-text/contenteditable | Detect at runtime; handle both | T015 (US3 fill) |
+| Q3 | Due-date string format on the discussions list | Discover from `fixtures/discussions_list.html`; parse in `portal_parse.parse_due_dates()` | T010 (US2 parse) |
 | Q4 | A `--wait`-capable GUI editor present on the operator's machine | Default `code --wait`; configurable in `config.py`; documented in operator setup | T004 (config) + T002 setup notes |
-| Q5 | The exact `claude` invocation that gets primed by the run-dir `CLAUDE.md` | Launch `claude` with `cwd=run_dir`; the workflow `CLAUDE.md` + `prompt.md` live there | T009 (handoff) + T010 (live session verify) |
+| Q5 | The exact `claude` invocation that gets primed by the run-dir `CLAUDE.md` | Launch `claude` with `cwd=run_dir`; the workflow `CLAUDE.md` + `prompt.md` live there | T008 (handoff `run_session`) + T009 (live session verify) |
 
 ## 4. Risks & Assumptions
 
@@ -116,7 +119,7 @@ discuss/
    Mitigation: verify-by-read-back (FR-012) + abort/preserve/manual-paste fallback.
    Recovery cost: adjust injection strategy inside the adapter; the draft is never lost.
 3. **`claude` priming contract** (does cwd `CLAUDE.md` reliably drive the workflow?).
-   Mitigation: run in the run dir; validate by a live session run (T010). Recovery cost:
+   Mitigation: run in the run dir; validate by a live session run (T009). Recovery cost:
    adjust `handoff.run_session()` (e.g. pass the prompt as an initial argument).
 4. **Session expiry mid-run.** Mitigation: login-detection + manual-login pause (FR-003).
    Recovery cost: low — operator logs in, run continues.
@@ -140,6 +143,7 @@ discuss/
 - **US3 (fill)** depends on the browser/adapter foundations (shares `portal_adapter.py`
   with US2 but different methods).
 - **US4 (one-click wiring)** depends on US1–US3 and is the integration slice.
-- The **live tasks** (T002 selector-capture, T010 live-session verify, T013 live-fill
-  verify, T015 end-to-end) are operator/verification tasks and serialize against access to
-  the real portal — they are coordination items, not parallelizable build work.
+- The **live tasks** (T002 selector-capture, T009 live-session verify, T013 live
+  discover/extract verify, T016 live-fill verify, T019 end-to-end) are
+  operator/verification tasks and serialize against access to the real portal — they are
+  coordination items, not parallelizable build work.
