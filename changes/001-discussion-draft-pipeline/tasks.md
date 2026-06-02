@@ -52,7 +52,7 @@ fire G2 (they are exempt and live-verified); `config.py`, `portal_parse.py`, `ha
 script (entry `discuss.cli:main`), with Playwright + a pure-HTML parser (`selectolax`) +
 pytest declared. `discuss --help` runs (even if the pipeline is a stub).
 
-- [ ] **T001**
+- [x] **T001**
   - `pyproject.toml`: project name `discuss`, `requires-python = ">=3.11"`,
     dependencies `["playwright", "selectolax"]`, dev extra `["pytest", "pytest-cov"]`,
     `[project.scripts] discuss = "discuss.cli:main"`, src layout (`packages = ["discuss"]`,
@@ -120,7 +120,7 @@ checklist exists and has been run once green by the operator.
 **Expected behavior (FR-014):** One exception class per fail-loud condition so the
 orchestrator can report the specific failing step.
 
-- [ ] **T003**
+- [x] **T003**
 
 ```python
 # src/discuss/errors.py
@@ -152,7 +152,7 @@ browser profile), `target_classes` (list of class identifiers), `confirm` (bool,
 live). Values come from a config file / env with documented defaults; `confirm` defaults
 on.
 
-- [ ] **T004 — RED → GREEN → REFACTOR**
+- [x] **T004 — RED → GREEN → REFACTOR**
   - RED: write the failing tests below; watch them fail (`Config` undefined).
   - GREEN: implement `Config.load(overrides: dict | None = None)` returning a dataclass
     with the defaults; env/file overrides merged over defaults.
@@ -823,3 +823,4 @@ items — their oracle is `docs/SELECTOR-CAPTURE.md`, not pytest.
 | Gate | Anchor | Verdict | Key findings |
 |------|--------|---------|--------------|
 | G1 | spec.md + plan.md + tasks.md | clear (+ no-oracle residue) | testability / completeness-consistency / scope all PASS after 2 design bounces. Fixed: selector-confinement made testable (was `[no-oracle]`), multi-limb fill-mismatch now asserts all three limbs, stale plan task-id refs (§3/§4/§5), bidirectional file-map gaps (cli.py, test_selector_confinement.py, dangling test_auth_predicate.py), login-page fixture added. **Residue (FR-015):** the live-portal + interactive-session criteria are `[no-oracle]` and verified by the operator checklist in `docs/SELECTOR-CAPTURE.md` during execute — not by automated tests. |
+| G2 | T004 (confirm-gate-default EARS; config defaults) | clear | spec-match: `test_confirm_defaults_on` criterion satisfied (`confirm: bool = True`, `load({})` constructs with no override). quality: PASS — no defects; mutable-default handling (default_factory for list fields, Path immutables) verified correct, no injection via `cls(**kwargs)` (known-field filter). 100% line/branch coverage on config.py. |
