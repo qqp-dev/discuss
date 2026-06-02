@@ -836,3 +836,53 @@ items — their oracle is `docs/SELECTOR-CAPTURE.md`, not pytest.
 | G2 | T020 ([no-review] — skipped) | n/a | G2 does not fire (docs). README.md authored (install / first-login / editor / launcher / re-verify / principles + the no-submit/no-creds/no-auto-generate guarantees); `docs/SELECTOR-CAPTURE.md` status finalized (capture done). **Aggregate floor green:** 50/50 pytest; every non-exempt module 100% line/branch (cli, config, errors, handoff, portal_parse) — exceeds Constitution §1 (85/75); `desktop-file-validate` PASS; `bash -n launch.sh` OK. |
 | G2 | T017-fix (cli.main config gathering; FR-001/FR-005/FR-014) | clear | **Bug found running live:** `main()` called `Config.load()` with no overrides, so `target_classes==[]` crashed at `target_classes[0]` with `IndexError` (config.py had delegated env/file gathering to cli.py, which never did it). **Fix:** added `_load_overrides(env)` reading `DISCUSS_TARGET_CLASSES`/`DISCUSS_EDITOR`/`DISCUSS_PROFILE_DIR`/`DISCUSS_RUN_ROOT`/`DISCUSS_CONFIRM`, and a fail-loud guard (print guidance + return 2) when no class is configured. spec-match PASS (env→config→run reached; no-class→non-zero+guidance, run never reached). quality PASS (live `os.environ` default reads current env per call — verified by setenv tests; malformed `","`/whitespace classes route to fail-loud, empirically confirmed; no mutable-default/dead code). 100% line/branch on cli.py; 53/53 suite. README documents the env vars. |
 | G3-residue | T009/T013/T016/T019 ([LIVE] [no-oracle]) | **OPERATOR-WAIVED — NOT verified live** | The four story-level live verifications were **waived by the operator (2026-06-02), not executed**. These are the FR-015 `[no-oracle]` residue (oracle = the live checklist in `docs/SELECTOR-CAPTURE.md`, against the real logged-in portal). They were **not** run; do **not** read these checkboxes as "verified live". **Residual risk accepted by operator:** the no-submit guarantee (FR-010) and no-credentials-stored (FR-002) are confirmed only by code inspection + fake-based unit tests (T014/T015/T017 + the structural no-submit grep), NOT against the live Blackboard Ultra reply form; likewise the login-pause (FR-003), live soonest-due selection/extraction (T013), and end-to-end flow (T019) are unconfirmed on the real portal. If a live selector or the runtime field-type detection is wrong, these behaviors are unverified. Re-run §3 + the story checklists in `docs/SELECTOR-CAPTURE.md` before relying on the tool against the live portal. |
+
+---
+
+## Escalation #1 — 2026-06-02 02:18
+
+**Trigger:** Assumption failure (the plan/process assumed its verification strategy constituted valid acceptance; it did not)
+**Blocked at:** Change-level acceptance — surfaced across T017 (orchestrator), the change close-out (T009/T013/T016/T019 waiver), and T017-fix (the post-"done" IndexError).
+
+### Completed Successfully
+- All 16 codeable build tasks + the T017-fix implemented under TDD; every per-task G2 panel (spec-match + quality) cleared; 100% line/branch on all non-exempt modules (cli, config, errors, handoff, portal_parse); 53/53 unit suite green.
+- A real defect was caught by the process: the `discussion_rows` capture selector excluded due-date cells (fixed, fixture-verified).
+- The live-running IndexError was root-caused and fixed once observed (env config gathering + fail-loud guard).
+
+### What Failed
+The acceptance process certified the change **done and all-green while the program could not run at all.** The orchestrator (`cli.run`) was tested entirely with builder-authored fakes (FakeAdapter, stub session, injected `make_run_dir`/`confirm`/`ensure_logged_in`), and `main()` — the actual console entry point — was "tested" by monkeypatching `_load_overrides` and `run`. So the single path that executes on a real `discuss` invocation (`Config.load()` with no overrides → `target_classes == []` → `target_classes[0]`) was never exercised end-to-end. Outcome: G2 spec-match PASS, G2 quality PASS, 100% coverage, lint-ears PASS, full suite green — and the **first** live invocation died with `IndexError` before doing any work. The gates validated the design's consistency with itself, not that the artifact runs; the one bug that mattered lived precisely in the integration seam the fakes papered over.
+
+Independently, the change's most safety-critical criteria — no-submit (FR-010), no-credentials (FR-002), login-pause (FR-003), live selection/extraction/fill — are all `[no-oracle]`, their only oracle being an operator checklist against the live portal. When the operator declined to run them, the change was still marked **done** (boxes checked, logged as "operator-waived"). So "done / all boxes checked / all gates green" was reachable with (a) a non-running program and (b) zero evidence the tool's defining safety guarantees hold. Coverage % and G2 verdicts both read as strong positive signals that were, here, hollow.
+
+### Last Command
+```
+$ DISCUSS_TARGET_CLASSES unset; discuss
+```
+
+### Last Error
+```
+Traceback (most recent call last):
+  File "/home/qqp/projects/discuss/.venv/bin/discuss", line 6, in <module>
+    sys.exit(main())
+  File "/home/qqp/projects/discuss/src/discuss/cli.py", line 110, in main
+    run(
+  File "/home/qqp/projects/discuss/src/discuss/cli.py", line 60, in run
+    adapter.go_to_discussions(page, config.target_classes[0])
+IndexError: list index out of range
+```
+(Bug since fixed in commit f233e72 — cited here as the evidence that a fatal defect passed every gate, not as an open blocker.)
+
+### Decision Needed
+The process let a non-running, safety-unverified change reach "done / all-green." Which corrective(s) should the method adopt? Concretely:
+- **(A) Mandatory no-mock entry-point smoke gate.** Require at least one test that invokes the real console entry / `main()` with the real `Config.load`/`_load_overrides`/`run` wiring (only the live browser/portal stubbed at the outermost boundary), so "the program starts and reaches a *defined* state" is gated — not just unit fakes. Should this be a G2 floor item for any task touching an entry point / integration seam?
+- **(B) Safety criteria cannot be `[no-oracle]`-waivable.** A criterion encoding a safety guarantee (no-submit, no-creds) must not be markable "done" while its only oracle is an unrun live checklist. Either make the live checklist a *blocking* gate, or require an automatable offline oracle. (Demonstrated feasible: running the real `fill_reply` against the captured `fixtures/reply_form.html` via `file://` exercises selector + runtime type-detect + read-back with zero submit risk — a candidate standing oracle for T016.)
+- **(C) "Waived" must not render as "done."** Introduce a distinct task state (deferred / unverified) so a change with unrun `[LIVE]` safety checks cannot present as all-boxes-checked / all-green.
+- **(D) Coverage honesty.** Should fake-driven entry-point tests be barred from counting toward the entry seam's coverage, so 100% can't be reported while the real path is unexercised?
+
+Which of A–D (or what else) becomes method/plan policy, and does this change require re-opening the contract / spec acceptance criteria for this feature before it can be legitimately closed?
+
+### Builder's Perspective
+I watched every gate go green — spec-match, quality, 100% line-and-branch, lint-ears, the whole suite — and handed it off feeling done; then the operator typed `discuss` and it died on the first real line of work. What unsettles me is that I didn't break any rule to get there: the plan said test the orchestrator with injected fakes, so I did, and `main()` was "covered" by monkeypatching the exact functions whose interaction was broken — the fakes proved the design agreed with itself, not that the thing runs, and the only bug that mattered was hiding in the seam the fakes replaced. I'd also been quietly uneasy checking the `[LIVE]` boxes as "operator-waived," because no-submit and no-creds *are* the whole point of this tool and we have no evidence they hold against the real portal — yet the change still rendered as fully done and green. The load-bearing realization is that in this process "all green" and "all boxes checked" were both attainable for a program that neither ran nor had its safety guarantees verified, which means the green told us almost nothing about the two things that matter most. I kept fixing the symptoms in-role (the selector, then the config crash) when the pattern underneath is that our oracles were either self-referential or waivable.
+
+### Generalizable Lesson
+_(To be written by design during escalation triage.)_
