@@ -301,11 +301,12 @@ def test_authenticated_page_not_login(discussions_fixture_html, discussions_url)
 - **Non-goals:** automating the login form (forbidden — FR-003).
 
 ```ears
-IF the operator is not authenticated when a run starts, THEN the tool SHALL pause and prompt for manual login before proceeding. [no-oracle]
+IF the operator is not authenticated when a run starts, THEN the tool SHALL pause and prompt for manual login before proceeding. [test: test_ensure_logged_in_pauses_on_login_page]
 ```
 
-**Acceptance criterion:** `is_login_page` tests pass; `ensure_logged_in` pauses (verified
-live in T019); no credential is ever read or written.
+**Acceptance criterion:** `is_login_page` tests pass; `ensure_logged_in` pause **logic** is
+verified offline in **T027** (`test_ensure_logged_in_pauses_on_login_page`), the live
+confirmation folding into T026; no credential is ever read or written.
 
 ---
 
@@ -543,7 +544,7 @@ def test_selectors_confined_to_adapter():
 - **Non-goals for testing:** no automated live hit (parsing already covered by T010/T011).
 
 ```ears
-WHILE a run is in progress, the tool SHALL act at human pace and SHALL NOT issue automated retry loops against the portal. [no-oracle]
+WHILE a run is in progress, the tool SHALL act at human pace and SHALL NOT issue an automated retry loop on a selector miss. [test: test_no_retry_loop_on_selector_miss]
 The tool SHALL define portal selectors only in the single adapter module. [test: test_selectors_confined_to_adapter]
 ```
 
@@ -852,16 +853,27 @@ it.
 ### Tests
 ```python
 # tests/test_no_submit.py
-import inspect
+import ast, inspect
 from discuss import portal_adapter
 
+def _code_without_docstring(fn) -> str:
+    """The function as code with its docstring removed and comments dropped, so the oracle
+    scans CODE — not the prose that legitimately documents the no-submit guarantee. (The
+    earlier `"submit" in getsource` form false-RED'd on the docstring; G1 caught it.)"""
+    node = ast.parse(inspect.getsource(fn)).body[0]
+    body = node.body
+    if (body and isinstance(body[0], ast.Expr)
+            and isinstance(getattr(body[0], "value", None), ast.Constant)
+            and isinstance(body[0].value.value, str)):
+        node.body = body[1:]                       # drop the docstring statement
+    return ast.unparse(node).lower()               # ast.unparse omits comments entirely
+
 def test_fill_reply_has_no_submit_path():
-    # FR-010/SC-007: no run path may click submit/post. Prove the absence structurally.
-    src = inspect.getsource(portal_adapter.fill_reply).lower()
-    for forbidden in ("submit", "post-button", "btn_post", 'role="button"', "[type='submit']"):
-        assert forbidden not in src, f"fill_reply references {forbidden!r}"
-    # the single allowed click focuses the editable field (documented intent)
-    assert src.count(".click(") <= 1
+    # FR-010/SC-007: the fill CODE may not look up or click a submit/post control.
+    code = _code_without_docstring(portal_adapter.fill_reply)
+    for forbidden in ("submit", "post-button", "btn_post", "publish", "[type='submit']"):
+        assert forbidden not in code, f"fill_reply CODE references {forbidden!r}"
+    assert code.count(".click(") <= 1              # the only click focuses the editable field
 ```
 
 ```ears
@@ -935,16 +947,33 @@ a `page.fill("#password", …)` or writing a secrets file reds it.
 ### Tests
 ```python
 # tests/test_no_creds.py
-import pathlib
+import ast, pathlib
+
+SRC = pathlib.Path("src/discuss")
+
+def _code_only(py: pathlib.Path) -> str:
+    """Module source as code: docstrings stripped, comments dropped (ast.unparse) — so the
+    safety prose that mentions 'password'/'credential' cannot false-RED this oracle (G1
+    caught the earlier bare-word form red-ing on the 'no password field' comment)."""
+    tree = ast.parse(py.read_text())
+    for node in ast.walk(tree):
+        body = getattr(node, "body", None)
+        if (isinstance(body, list) and body and isinstance(body[0], ast.Expr)
+                and isinstance(getattr(body[0], "value", None), ast.Constant)
+                and isinstance(body[0].value.value, str)):
+            node.body = body[1:]                   # drop this scope's docstring
+    return ast.unparse(tree).lower()
 
 def test_no_credentials_persisted():
-    # FR-002/SC-007: never store a credential; never automate the login form.
-    src = pathlib.Path("src/discuss")
-    blob = "\n".join(p.read_text() for p in src.glob("*.py")).lower()
-    for forbidden in ("password", "credential", "secret", "keyring", '#password', "login_form"):
-        assert forbidden not in blob, f"a module references {forbidden!r}"
-    # the only persistence is the persistent browser profile dir
-    assert "launch_persistent_context" in (src / "browser.py").read_text()
+    # FR-002/SC-007: never automate the login form, never store a credential. Scan CODE only,
+    # and only for ACTIONABLE patterns (an API call / a real selector / a secrets file) — not
+    # the bare words that appear in the modules' safety comments.
+    code = "\n".join(_code_only(p) for p in SRC.glob("*.py"))
+    for forbidden in ("getpass", "keyring", "#password", "secret=", "credentials.json",
+                      "password_field", "login_form", ".fill(pw"):
+        assert forbidden not in code, f"a module's CODE references {forbidden!r}"
+    # the only persistence is the operator's own browser profile (no stored secret)
+    assert "launch_persistent_context" in (SRC / "browser.py").read_text()
 ```
 
 ```ears
@@ -1060,6 +1089,71 @@ confirms and self-snapshots on miss; flow logic green; **[REVIEW] (G2)** fires (
 
 ---
 
+### T027 [TDD] [P] [no-review] [depends: T006, T012] — Pause-logic & no-retry offline oracles (FR-003, FR-016)
+
+**Files touched:** Create `tests/test_adapter_logic.py`; adjust `src/discuss/browser.py`
+(coverage-exempt) only if `ensure_logged_in` needs a give-up signal to be testable.
+
+**Expected behavior:** Two offline oracles for behavior the old plan wrongly left
+`[no-oracle]` — both tested against **fakes**, no live portal, so two more safety/pace
+criteria stop being waivable:
+
+1. **Login-pause logic (FR-003):** a fake page whose url/html reads as the login screen
+   (`is_login_page → True`) makes `browser.ensure_logged_in` **prompt and pause** for
+   manual login (never auto-filling a credential), and raise `NotAuthenticated` only when
+   the operator gives up. Asserts the pause *happens* — the live page-recognition residue
+   stays in T026.
+2. **No-retry (FR-016 / P-I):** a fake page whose row query returns `None` makes
+   `portal_adapter.go_to_discussions` raise `SelectorMiss` after **exactly one**
+   navigation (no retry loop).
+
+- **RED → GREEN → REFACTOR:** drive both with the tests below. If `ensure_logged_in` loops
+  unboundedly, add a give-up signal (e.g. the operator typing `q`) so the pause is
+  testable while staying human-paced by default.
+
+### Tests
+```python
+# tests/test_adapter_logic.py
+import pytest
+from discuss import browser, portal_adapter
+from discuss.errors import NotAuthenticated, SelectorMiss
+
+class _LoginPage:
+    url = "https://www.phoenix.edu/login"
+    def content(self): return "<title>University of Phoenix Login</title>"
+
+def test_ensure_logged_in_pauses_on_login_page(monkeypatch):
+    # FR-003: a login page makes ensure_logged_in PROMPT/pause; it never auto-fills creds,
+    # and gives up (NotAuthenticated) only when the operator declines.
+    prompts = []
+    monkeypatch.setattr("builtins.input", lambda p="": prompts.append(p) or "q")  # operator quits
+    with pytest.raises(NotAuthenticated):
+        browser.ensure_logged_in(_LoginPage())
+    assert prompts and any("log in" in p.lower() for p in prompts)   # the pause prompt fired
+
+def test_no_retry_loop_on_selector_miss():
+    # FR-016/P-I: a selector miss raises after exactly ONE navigation — no retry storm.
+    gotos = []
+    class _Page:
+        def goto(self, url, **kw): gotos.append(url)
+        def query_selector(self, sel): return None      # rows never resolve
+    with pytest.raises(SelectorMiss):
+        portal_adapter.go_to_discussions(_Page(), "_577963_1")
+    assert len(gotos) == 1, "go_to_discussions must not retry-loop on a selector miss"
+```
+- **Non-goals:** the *live* login page recognition + live navigation (those are T026).
+
+```ears
+IF the operator is not authenticated when a run starts, THEN the tool SHALL pause and prompt for manual login before proceeding. [test: test_ensure_logged_in_pauses_on_login_page]
+WHILE a run is in progress, the tool SHALL NOT issue an automated retry loop on a selector miss. [test: test_no_retry_loop_on_selector_miss]
+```
+
+**Acceptance criterion:** Both offline oracles pass against fakes; the login-pause and
+no-retry criteria (formerly `[no-oracle]`) are now automatable. `browser.py`/`portal_adapter.py`
+are coverage-exempt, so G2 does not fire (the tests are the oracle).
+
+---
+
 ### T026 [LIVE] — Single smooth guided validation run (DEFERRED — live-unverified)
 
 **Files touched:** none (this is the one irreducible human-in-the-loop run; it may *produce*
@@ -1100,11 +1194,12 @@ while unverified".
 - **US3 (T014–T016)** → T014 parallel; T015/T016 after T002 + T014.
 - **US4 (T017–T019)** → T017 after the pure units; T018 after T001; T019 superseded → T024/T026.
 - **Polish (T020)** → last of the original build.
-- **Phase 8 correctives (T021–T026, Escalation #1):** T021/T023 (structural oracles) and
+- **Phase 8 correctives (T021–T027, Escalation #1):** T021/T023 (structural oracles) and
   T022 (`file://` fill oracle) run in parallel after their targets exist (T015); T024
-  (no-mock smoke) after T017; T025 (`discuss validate`) after T017/T012/T015/T006; **T026**
-  is the single operator-run live validation — DEFERRED, gating PROVISIONAL → live-verified,
-  never auto-checked. US1 reaches *done* independently of all of Phase 8.
+  (no-mock smoke) after T017; T025 (`discuss validate`) after T017/T012/T015/T006; T027
+  (pause-logic + no-retry offline oracles) after T006/T012; **T026** is the single
+  operator-run live validation — DEFERRED, gating PROVISIONAL → live-verified, never
+  auto-checked. US1 reaches *done* independently of all of Phase 8.
 
 Within each story: tests RED-first before implementation; respect every `[depends: …]`;
 commit after each task whose tests pass (and after G2 clears for `[REVIEW]` tasks).

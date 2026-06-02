@@ -87,7 +87,7 @@ phase: handoff
 > hand). Design never self-stamps. The floor's `lint-signoff` blocks handoff until this is
 > `SIGNED` with a hash matching the current artifacts.
 
-status: UNSIGNED
-operator:
-signed_at:
-artifacts_hash:
+status: SIGNED
+operator: abacus-git
+signed_at: 2026-06-02
+artifacts_hash: d5bc580c0362d40017d36a00c9461fe37cf6af146bfdffc034d46ed448095fce

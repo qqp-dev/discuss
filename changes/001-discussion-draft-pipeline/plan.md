@@ -138,6 +138,7 @@ discuss/
     test_no_submit.py             # structural: fill_reply has no submit/post lookup or click (FR-010)
     test_no_creds.py              # structural: no credential write; only the profile dir is touched (FR-002)
     test_validate.py              # `discuss validate` flow: single-keypress confirms; DOM self-snapshot on miss (FR-017/018)
+    test_adapter_logic.py         # offline oracles for exempt-module behavior: login-pause logic (FR-003) + no-retry on selector miss (FR-016)
   docs/
     SELECTOR-CAPTURE.md     # operator checklist: capture live selectors + verify live steps
 ```
