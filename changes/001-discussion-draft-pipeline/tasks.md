@@ -198,7 +198,7 @@ meta) -> Path` (writes `prompt.md`); `render_workflow(run_dir, template_path)` (
 workflow into `run_dir/CLAUDE.md`); `read_response(run_dir) -> str` (reads `response.md`,
 raises `EmptyResponse` if missing/whitespace-only).
 
-- [ ] **T005 — RED → GREEN → REFACTOR**
+- [x] **T005 — RED → GREEN → REFACTOR**
   - RED: write the tests below against a `tmp_path`; watch them fail.
   - GREEN: implement the four functions; `read_response` strips and raises
     `EmptyResponse` on empty/whitespace.
@@ -304,7 +304,7 @@ command (e.g. `code --wait response.md`) and wait for save+close; (6) confirm "r
 insert? [y]" then exit. It explicitly forbids submitting anything and frames the work as
 assisting the operator's own post (P-II).
 
-- [ ] **T007** — write `templates/workflow-CLAUDE.md` per the steps above; reference
+- [x] **T007** — write `templates/workflow-CLAUDE.md` per the steps above; reference
   `prompt.md` and `response.md` by name; embed the editor-open + block step; state the
   no-auto-generate and no-submit rules.
 
@@ -331,7 +331,7 @@ workflow into the run dir, launches `claude` **interactively with `cwd=run_dir`*
 available to the session via env (`DISCUSS_EDITOR`) so the workflow can open it. Subprocess
 is mocked in tests; the live behavior is T009.
 
-- [ ] **T008 — RED → GREEN → REFACTOR**
+- [x] **T008 — RED → GREEN → REFACTOR**
   - RED: test that `run_session` invokes the claude subprocess with `cwd=run_dir` and the
     editor in env, then returns the response text (subprocess + `read_response` exercised
     via a written `response.md`).
@@ -556,7 +556,7 @@ correct prompt; confirmation gate names the right discussion + due date.
 bool` — normalizes whitespace/newlines on both sides and compares; the decision is pure so
 it is unit-tested independent of the live field.
 
-- [ ] **T014 — RED → GREEN → REFACTOR**
+- [x] **T014 — RED → GREEN → REFACTOR**
   - RED: tests below fail (`verify_fill_readback` undefined).
   - GREEN: normalize (strip, collapse internal whitespace, unify newlines) then `==`.
   - REFACTOR: reuse the normalization helper from T011.
@@ -743,7 +743,7 @@ code in `cli.py`).
 `discuss.desktop` is a freedesktop entry pointing at `launch.sh` with an icon/name, so a
 double-click starts a run.
 
-- [ ] **T018** — write `launch.sh` (detect a terminal: `x-terminal-emulator`/`gnome-terminal`,
+- [x] **T018** — write `launch.sh` (detect a terminal: `x-terminal-emulator`/`gnome-terminal`,
   fallback documented) and `discuss.desktop` (`Type=Application`, `Exec=…/launch.sh`,
   `Terminal=false`, `Name=Discuss`).
 
@@ -824,3 +824,6 @@ items — their oracle is `docs/SELECTOR-CAPTURE.md`, not pytest.
 |------|--------|---------|--------------|
 | G1 | spec.md + plan.md + tasks.md | clear (+ no-oracle residue) | testability / completeness-consistency / scope all PASS after 2 design bounces. Fixed: selector-confinement made testable (was `[no-oracle]`), multi-limb fill-mismatch now asserts all three limbs, stale plan task-id refs (§3/§4/§5), bidirectional file-map gaps (cli.py, test_selector_confinement.py, dangling test_auth_predicate.py), login-page fixture added. **Residue (FR-015):** the live-portal + interactive-session criteria are `[no-oracle]` and verified by the operator checklist in `docs/SELECTOR-CAPTURE.md` during execute — not by automated tests. |
 | G2 | T004 (confirm-gate-default EARS; config defaults) | clear | spec-match: `test_confirm_defaults_on` criterion satisfied (`confirm: bool = True`, `load({})` constructs with no override). quality: PASS — no defects; mutable-default handling (default_factory for list fields, Path immutables) verified correct, no injection via `cls(**kwargs)` (known-field filter). 100% line/branch coverage on config.py. |
+| G2 | T005 (missing/blank-response-raises EARS; handoff I/O) | clear | spec-match: `test_read_response_empty_raises` satisfied — `read_response` strips then raises `EmptyResponse` on blank AND missing before any write-back. quality: PASS — no leaks (self-closing I/O), explicit utf-8, `mkdtemp` collision-free; benign exists()→read TOCTOU and None-input both non-defects under tool-controlled single-operator threat model. 100% line/branch on handoff.py. |
+| G2 | T008 (session-exit-returns-response EARS; run_session) | clear | spec-match: `test_run_session_invokes_claude_in_run_dir` satisfied — `run_session` launches `claude` (`cmd[0]`) with `cwd=run_dir` + `DISCUSS_EDITOR` env, returns `read_response` on rc==0. quality: PASS — list-arg subprocess (no shell=True, no injection), env is superset of `os.environ` (PATH/HOME preserved), non-zero→DiscussError, blank→EmptyResponse. Noted: `" ".join(editor_cmd)` lossy on space-containing args (operator-config fidelity nit, not a defect; matches task GREEN). 100% line/branch on handoff.py. |
+| G2 | T014 (read-back-mismatch-fails EARS; verify_fill_readback) | BLOCK→clear (1 bounce) | quality BLOCK (round 1): symmetric tag-strip stripped markup from the *intended* side too → fail-OPEN (`verify("Use Vec<String>","Use Vec<HashMap>")` wrongly True), letting a garbled paste pass the FR-012 safety gate. **Fix:** asymmetric normalization — `intended` whitespace-collapsed only (literal `<…>` preserved), `actual` markup-stripped; added regression tests (incl. empty-actual). Round 2: quality PASS (fail-open gone; tag-strip on actual can only delete spans, residual ambiguity fails SAFE) + spec-match PASS (`test_readback_mismatch_detected`). 100% line/branch on portal_parse.py. |
