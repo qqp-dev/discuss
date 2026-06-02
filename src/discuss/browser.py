@@ -36,24 +36,28 @@ def open_persistent_context(profile_dir):
     return context, page
 
 
-def ensure_logged_in(page, announce=print, wait=input):
+def ensure_logged_in(page, wait=None):
     """Pause for manual login while the current page is the login screen (FR-003).
 
-    Human-paced (Constitution P-I): announce, wait for the operator to press Enter, then
-    re-check the predicate — there is NO tight retry loop and NO attempt cap, because each
-    iteration blocks on the operator. Raises ``NotAuthenticated`` only if the operator
-    gives up (signals EOF / Ctrl-D at the prompt). Never reads or types a credential.
+    Human-paced (Constitution P-I): while the login screen is showing, prompt the operator to
+    log in by hand in the browser and press Enter to continue — or type ``q`` to give up —
+    then re-check the predicate. There is NO tight retry loop and NO attempt cap, because each
+    iteration blocks on the operator. Raises ``NotAuthenticated`` when the operator gives up
+    (types ``q``, or signals EOF / Ctrl-D at the prompt). Never reads or types a credential.
 
-    ``announce``/``wait`` are injected so the pause UX is driven by the operator; the live
-    behaviour is verified in T019.
+    ``wait`` is the injectable prompt-and-block seam; its default is the builtin ``input``,
+    resolved **at call time** (not bound at definition) so the pause is monkeypatch-able in
+    tests and so a give-up signal can be driven. The live page-recognition residue is T026.
     """
+    ask = input if wait is None else wait
     while is_login_page(page.url, page.content()):
-        announce(
-            "Please log in to the portal in the opened browser window, then press Enter "
-            "here to continue (or Ctrl-D to abort)."
-        )
         try:
-            wait("")
+            answer = ask(
+                "Please log in to the portal in the opened browser window, then press Enter "
+                "to continue (or type 'q' to give up): "
+            )
         except EOFError as exc:
-            raise NotAuthenticated("operator aborted manual login") from exc
+            raise NotAuthenticated("operator aborted manual login (EOF)") from exc
+        if answer.strip().lower() == "q":
+            raise NotAuthenticated("operator gave up manual login")
     return page
