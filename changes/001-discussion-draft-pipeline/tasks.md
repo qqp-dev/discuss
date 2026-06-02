@@ -907,6 +907,13 @@ This exercises the actual fill surface the criterion names — not a fake.
 - **No silent skips:** if `playwright install chromium` is absent the test must `skip`
   with a loud printed reason — never pass silently (no-silent-caps; the skip is visible).
 
+- [x] **T022 — RED → GREEN → REFACTOR** — wrote `tests/test_fill_offline.py`; the **real**
+  `fill_reply` drives the captured Quill `reply_form.html` over `file://` in headless
+  Chromium (ran 3.6s, not skipped) and renders the text, passes read-back, navigates
+  nothing. **No adapter fix needed** — the captured contenteditable branch works as-is.
+  Proven falsifiable: neutering the `insert_text` → RED (`FillVerifyFailed` caught the empty
+  field); a non-matching `REPLY_FIELD_SEL` → RED (`SelectorMiss`); revert → GREEN.
+
 ### Tests
 ```python
 # tests/test_fill_offline.py
@@ -1230,6 +1237,7 @@ items — their oracle is `docs/SELECTOR-CAPTURE.md`, not pytest.
 | G2 | T020 ([no-review] — skipped) | n/a | G2 does not fire (docs). README.md authored (install / first-login / editor / launcher / re-verify / principles + the no-submit/no-creds/no-auto-generate guarantees); `docs/SELECTOR-CAPTURE.md` status finalized (capture done). **Aggregate floor green:** 50/50 pytest; every non-exempt module 100% line/branch (cli, config, errors, handoff, portal_parse) — exceeds Constitution §1 (85/75); `desktop-file-validate` PASS; `bash -n launch.sh` OK. |
 | G2 | T017-fix (cli.main config gathering; FR-001/FR-005/FR-014) | clear | **Bug found running live:** `main()` called `Config.load()` with no overrides, so `target_classes==[]` crashed at `target_classes[0]` with `IndexError` (config.py had delegated env/file gathering to cli.py, which never did it). **Fix:** added `_load_overrides(env)` reading `DISCUSS_TARGET_CLASSES`/`DISCUSS_EDITOR`/`DISCUSS_PROFILE_DIR`/`DISCUSS_RUN_ROOT`/`DISCUSS_CONFIRM`, and a fail-loud guard (print guidance + return 2) when no class is configured. spec-match PASS (env→config→run reached; no-class→non-zero+guidance, run never reached). quality PASS (live `os.environ` default reads current env per call — verified by setenv tests; malformed `","`/whitespace classes route to fail-loud, empirically confirmed; no mutable-default/dead code). 100% line/branch on cli.py; 53/53 suite. README documents the env vars. |
 | G2 | T021 ([no-review] — skipped) | n/a | G2 does not fire (test-only task; `portal_adapter.py` is coverage-exempt). The structural no-submit oracle (`test_no_submit.py`) passes and is **proven falsifiable** (inject a `[type='submit']` click → RED, revert → GREEN). Scans the fill CODE with docstring + comments stripped (`ast.unparse`), so it cannot false-RED on the no-submit prose. Aggregate floor green: 54/54. |
+| G2 | T022 (file:// fill oracle; not [REVIEW]) | n/a | G2 does not fire (test-only; the adapter is coverage-exempt and unchanged). The `file://` fill oracle runs the REAL `fill_reply` against the captured Quill DOM in headless Chromium and is **proven falsifiable** (neutered insert → `FillVerifyFailed`; wrong reply selector → `SelectorMiss`; revert → GREEN). This is the no-mock, observed-rendered-effect oracle Escalation #1 lesson #2 demanded — it replaces the waivable live fill checklist (old T016) offline, with zero submit risk. 55/55. |
 | G3-residue | T009/T013/T016/T019 ([LIVE] [no-oracle]) | **OPERATOR-WAIVED — NOT verified live** | The four story-level live verifications were **waived by the operator (2026-06-02), not executed**. These are the FR-015 `[no-oracle]` residue (oracle = the live checklist in `docs/SELECTOR-CAPTURE.md`, against the real logged-in portal). They were **not** run; do **not** read these checkboxes as "verified live". **Residual risk accepted by operator:** the no-submit guarantee (FR-010) and no-credentials-stored (FR-002) are confirmed only by code inspection + fake-based unit tests (T014/T015/T017 + the structural no-submit grep), NOT against the live Blackboard Ultra reply form; likewise the login-pause (FR-003), live soonest-due selection/extraction (T013), and end-to-end flow (T019) are unconfirmed on the real portal. If a live selector or the runtime field-type detection is wrong, these behaviors are unverified. Re-run §3 + the story checklists in `docs/SELECTOR-CAPTURE.md` before relying on the tool against the live portal. |
 
 ---
