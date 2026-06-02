@@ -52,4 +52,4 @@ def login_url() -> str:
 
 @pytest.fixture
 def discussions_url() -> str:
-    return "https://vle.phoenix.edu/ultra/courses/_577963_1/cl/outline"
+    return "https://vle.phoenix.edu/ultra/courses/_577963_1/engagement"

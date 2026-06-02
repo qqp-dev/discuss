@@ -16,6 +16,8 @@ of the live tasks can run until SELECTORS and DUE_DATE_FORMAT are filled.
 
 from __future__ import annotations
 
+from discuss.errors import SelectorMiss
+
 # ---------------------------------------------------------------------------------------
 # SELECTORS — captured from a LIVE portal session (docs/SELECTOR-CAPTURE.md, task T002).
 #
@@ -92,3 +94,66 @@ DUE_DATE_FORMAT = "%m/%d/%y, %I:%M %p"
 # on www.phoenix.edu and carries this exact <title>; the logged-in portal is on
 # vle.phoenix.edu (no password field). Confirmed against login_page.html.
 LOGIN_PAGE_MARKER = "University of Phoenix Login"
+
+# The discussions area for a class. `class_link` is empty (the start-from-homepage click
+# is not used); we navigate directly to the engagement area, the stem every discussion row
+# in the captured list shares (…/courses/<id>/engagement). The exact landing URL is a live
+# detail verified in T013.
+DISCUSSIONS_URL_TEMPLATE = "https://vle.phoenix.edu/ultra/courses/{class_id}/engagement"
+
+
+# ---------------------------------------------------------------------------------------
+# Live navigate/extract methods (T012). [COVERAGE-EXEMPT] — these drive a real Playwright
+# ``page`` against the login-gated portal and are verified by the operator checklist (T013),
+# not by unit tests. All PURE parsing they rely on is delegated to ``portal_parse`` (which
+# IS unit-tested against the saved fixtures). Each method is human-paced and issues the
+# minimum page loads (FR-016, P-I); any missing selector raises ``SelectorMiss`` naming the
+# step, so a portal change fails loud and points here (the one-file fix).
+#
+# ``portal_parse`` is imported lazily inside the methods: it imports the selector constants
+# from this module at import time, so a top-level import here would be circular.
+# ---------------------------------------------------------------------------------------
+
+
+def go_to_discussions(page, class_id: str):
+    """Navigate to the discussions list for ``class_id`` (FR-004). Raises SelectorMiss if
+    the list does not render (no discussion rows resolve)."""
+    page.goto(DISCUSSIONS_URL_TEMPLATE.format(class_id=class_id), wait_until="domcontentloaded")
+    if page.query_selector(DISCUSSION_ROWS_SEL) is None:
+        raise SelectorMiss(
+            f"discussions list did not render for class {class_id} "
+            f"(no rows matched {DISCUSSION_ROWS_SEL!r})"
+        )
+    return page
+
+
+def list_discussions(page):
+    """Return the discussions on the current list page (FR-004), delegating the parse to
+    the unit-tested ``portal_parse.parse_discussions``."""
+    from discuss.portal_parse import parse_discussions
+
+    return parse_discussions(page.content())
+
+
+def open_discussion(page, discussion):
+    """Open ``discussion`` (a parsed row) and confirm its prompt container is present
+    (FR-006). Raises SelectorMiss if the prompt container is absent."""
+    page.goto(discussion.url, wait_until="domcontentloaded")
+    if page.query_selector(PROMPT_CONTAINER_SEL) is None:
+        raise SelectorMiss(
+            f"prompt container not found on discussion page (selector {PROMPT_CONTAINER_SEL!r})"
+        )
+    return page
+
+
+def extract_prompt(page) -> str:
+    """Return the discussion's prompt as normalized plaintext (FR-006), delegating to the
+    unit-tested ``portal_parse.extract_prompt_text``. Raises SelectorMiss on empty text."""
+    from discuss.portal_parse import extract_prompt_text
+
+    text = extract_prompt_text(page.content())
+    if not text:
+        raise SelectorMiss(
+            f"prompt text was empty (container {PROMPT_CONTAINER_SEL!r} missing or blank)"
+        )
+    return text
