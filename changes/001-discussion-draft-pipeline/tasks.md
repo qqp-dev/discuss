@@ -1406,3 +1406,143 @@ any validation, it must be a smooth user experience — this is critical."*
 fully-verifiable product. The portal pipeline (US2–US4) is now offline-verified (T021–T025,
 all agent work) and PROVISIONAL pending the one smooth `discuss validate` run (T026). The
 human's entire remaining burden is: log in once, press a key at each checkpoint.
+
+---
+
+## Escalation #2 — 2026-06-02 11:03
+
+**Trigger:** Assumption failure (the plan's live-navigation + auth approach assumed a
+server-rendered portal and a persistent session; the live portal is a client-rendered SPA
+behind a ForgeRock SSO that redirects on an expired/non-persistent session — and the offline
+oracles structurally cannot catch it)
+**Blocked at:** Task T026 — Single smooth guided validation run (the first real live
+execution of the portal pipeline)
+
+### Completed Successfully
+- **All Phase 8 offline correctives (T021–T025, T027) built, G3-certified, committed.** The
+  full G3 panel (spec-match / regression / invariants / quality, context-starved) cleared
+  "code-verified + human-residue (T026 live)"; 73/73; every non-exempt module 100% line+branch;
+  all 22 `[test:]` tags bind to collected tests. The escalation-#1 wound (self-referential /
+  waivable oracles) is genuinely closed for everything offline-observable.
+- **FR-018 worked exactly as designed:** the live selector miss self-snapshotted the live DOM
+  to `fixtures/navigate_live.html` (preserved as `evidence-navigate_live.html`) and named
+  `portal_adapter.py` as the one-file home — the operator hand-captured nothing.
+- **Root-caused the live failure** across two operator live runs (incl. one after an
+  out-of-band re-login into the tool's own persistent profile).
+
+### What Failed
+The very first live run of `discuss validate` missed at the `navigate` step:
+`go_to_discussions` navigated to the engagement URL, queried `DISCUSSION_ROWS_SEL`, found no
+rows, and (correctly, per FR-018) snapshotted the live DOM. But the snapshot is **not** the
+discussions list and **not** a drifted selector — it is a **1.6 KB un-rendered Vue SPA login
+shell** (`<title>Login</title>`, empty `<div id="appRoot">`, `data-testid="fr-body-image"` →
+ForgeRock). Navigating to `/engagement` **redirected to the ForgeRock SSO login** — the
+persistent session was not authenticated.
+
+Three structural mismatches, none a one-file selector value, underlie this:
+
+1. **The live portal (Blackboard Ultra) and its IdP (ForgeRock) are client-rendered SPAs;
+   the adapter navigates with `wait_until="domcontentloaded"` and queries/snapshots the DOM
+   *immediately* (portal_adapter.py:122-123, 142-143).** Every T002 fixture is a *post-render*
+   snapshot, but the live adapter operates *pre-render*. The captured `login_page.html` is the
+   *same* ForgeRock IdP rendered (it carries the `"University of Phoenix Login"` marker
+   `is_login_page` keys on) — the live shell, captured pre-render, has only `<title>Login</title>`
+   and no marker. So the same timing flaw breaks **row detection**, **login detection**, *and*
+   makes the **FR-018 diagnostic snapshot** capture ~nothing useful.
+
+2. **The auth check is mis-sequenced.** `_run_validate` (and `run`) call
+   `browser.ensure_logged_in(page)` on the freshly-opened `about:blank` context page **before**
+   `go_to_discussions` ever navigates (cli.py:218), so the FR-003 manual-login pause can never
+   see the post-navigation login redirect. The operator is shown an opaque "navigate selector
+   miss," not the "please log in" pause the spec promises.
+
+3. **The persistent session did not survive.** After logging into the tool's exact Chromium
+   pointed at the tool's exact `--user-data-dir=profile`, then re-running, the **identical**
+   login shell came back — suggesting the ForgeRock/UOPX session does not persist across
+   separate launches (session-only cookies / device binding?), which challenges FR-002's
+   "reuse the operator's existing authenticated session" premise.
+
+Critically, **the offline suite is still 73/73 green** — because it exercises *post-render*
+fixtures and the *flow logic*, it structurally cannot reproduce a *pre-render* live timing
+failure or a live auth-redirect. This is the live residue the sign-off named ("captured
+selectors still match the live portal today … catchable only by the live T026 run"), but the
+shape is deeper than selector drift: it is the **whole live-navigation-and-auth strategy**.
+And I cannot verify any fix myself — the adapter is coverage-exempt precisely because it is
+only honestly exercisable against the live, login-gated portal, so every fix iteration costs
+an operator live round-trip with no offline oracle to catch a regression.
+
+### Last Command
+```
+$ DISCUSS_TARGET_CLASSES=_577963_1 .venv/bin/discuss validate
+  # (re-run, AFTER an out-of-band login into the tool's own persistent profile:
+  #   /home/qqp/.cache/ms-playwright/chromium-1223/chrome-linux64/chrome \
+  #     --user-data-dir=/home/qqp/projects/discuss/profile \
+  #     "https://vle.phoenix.edu/ultra/courses/_577963_1/engagement"  )
+```
+
+### Last Error
+```
+Selector miss at the 'navigate' step: discussions list did not render for class _577963_1 (no rows matched "div[class*='makeStylescontentListItem']")
+Saved the live page markup to fixtures/navigate_live.html for re-capture. Fix the selector in src/discuss/portal_adapter.py — the one-file home for every portal selector.
+
+# fixtures/navigate_live.html (1609 bytes), the actual landing DOM:
+<!DOCTYPE html><html lang="en"><head>...<title>Login</title>
+<script defer src="js/app.bf2f14ed.js">...</head>
+<body class="fr-body-image" data-testid="fr-body-image">
+  <noscript>We're sorry but login doesn't work properly without JavaScript enabled...</noscript>
+  <div id="appRoot" class="h-100"></div>   <!-- un-rendered ForgeRock SSO login shell -->
+</body></html>
+```
+
+### Decision Needed
+The portal pipeline cannot reach a logged-in page, and the fix is a cross-cutting redesign of
+the live-navigation + auth strategy — design's call, not a builder selector swap. Concretely:
+
+- **(A) Condition-based waiting in the adapter.** Replace `wait_until="domcontentloaded"` +
+  immediate `query_selector` with waiting for the rendered content — e.g.
+  `page.wait_for_selector(rows OR login-marker, timeout=…)`, or `wait_until="networkidle"`,
+  across `go_to_discussions` / `open_discussion` / `extract_prompt`. Should FR-018 also
+  snapshot *after* render so the diagnostic is useful? What timeout stays "human-paced" (P-I)
+  without a tight poll?
+- **(B) Re-sequence auth: navigate → wait → detect login-vs-content → pause (FR-003) → retry.**
+  Move `ensure_logged_in` to *after* the first portal navigation (so it sees the redirect),
+  and have `go_to_discussions` raise `NotAuthenticated` (not `SelectorMiss`) when it lands on
+  the login page, so `validate`/`run` can pause for manual login and retry **within the same
+  context** (where the just-established session is valid). This modifies the G3-certified
+  `validate` flow — re-open it under the plan?
+- **(C) Login-page detection for the SPA shell.** The pre-render shell lacks the
+  `"University of Phoenix Login"` marker; detect via title `Login` / `fr-body-image` / the URL
+  host, or simply wait for render so the existing marker works. Does this need a *new*
+  un-rendered-login fixture for an offline timing oracle (`is_login_page` is non-exempt)?
+- **(D) Session persistence (FR-002).** If the UOPX/ForgeRock session genuinely does not
+  persist across launches, the "reuse the persistent authenticated session" premise needs
+  revisiting — accept "log in once per run" (pause-and-retry within the run), or investigate
+  the profile/cookie persistence. Which?
+- **(E) Verification model.** Every fix here is verifiable *only* live, by the operator. Should
+  the plan provision an explicit fix→operator-live-run iteration loop for the adapter, and
+  acknowledge the offline oracles cannot gate the pre-render/auth seam (only post-render
+  parsing + flow logic)?
+
+Does adopting A–E re-open `spec.md`/`plan.md` (FR-002 session model, FR-003 sequencing,
+FR-004 navigation waiting, FR-018 capture timing), and which combination becomes the plan?
+
+### Builder's Perspective
+I built and G3-certified every offline corrective and felt genuinely good about it — and then
+the very first real `discuss validate` walked straight into a wall I had no way to see coming
+from inside the tests, because every fixture I had was a photograph of the portal *after* it
+finished painting, while the live tool was reading the DOM the instant it loaded. The "selector
+miss at navigate" message was a red herring of my own design: the rows weren't missing because
+a class name churned, they were missing because we'd been bounced to a JavaScript login page
+that hadn't even rendered yet, and our login detector was looking for a marker that only exists
+once the page paints. What unsettles me most is that I asked the operator to log in to the
+tool's own profile and re-run, and the *exact same* 1.6 KB shell came back — so either the
+session doesn't persist at all or I'm missing something only the live environment can tell me,
+and I have no offline oracle to decide which. I kept wanting to "just add a wait and a pause,"
+but I'd be writing blind changes to coverage-exempt code, spending the operator's live runs as
+my only test harness, and quietly re-opening the `validate` flow I'd just had four independent
+reviewers bless — and the load-bearing realization is that the offline green I worked so hard
+for is, for this exact seam, structurally incapable of telling me whether the tool actually
+works against the real portal.
+
+### Generalizable Lesson
+_(To be written by design during escalation triage.)_
