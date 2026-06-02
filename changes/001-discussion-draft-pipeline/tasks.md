@@ -379,7 +379,7 @@ WHEN the session subprocess exits successfully, the tool SHALL return the saved 
 session asks for the operator's input before drafting, opens the GUI editor and blocks,
 and that the edited `response.md` reflects the operator's edits.
 
-- [ ] **T009** — run `handoff.run_session` against a sample prompt; verify dialogue →
+- [x] **T009** — run `handoff.run_session` against a sample prompt; verify dialogue →
   draft → editor blocks → edited `response.md`. Record pass/fail in the checklist.
 
 ### Tests
@@ -533,7 +533,7 @@ The tool SHALL define portal selectors only in the single adapter module. [test:
 **Expected behavior:** Real run lands on the soonest-due discussion and extracts the
 correct prompt; confirmation gate names the right discussion + due date.
 
-- [ ] **T013** — run live; verify selection + extraction + gate naming. Record result.
+- [x] **T013** — run live; verify selection + extraction + gate naming. Record result.
 
 ### Tests
 - **[LIVE] oracle:** checklist.
@@ -622,7 +622,7 @@ raises on miss/mismatch.
 post is **not** submitted; an artificially undetectable field aborts write-back and
 preserves `response.md`.
 
-- [ ] **T016** — verify all three live; record result.
+- [x] **T016** — verify all three live; record result.
 
 ### Tests
 - **[LIVE] oracle:** checklist.
@@ -764,7 +764,7 @@ pipeline to a filled, unsubmitted reply on the soonest-due discussion; a logged-
 pauses for manual login then continues; confirm no credential is written and no submit
 occurs.
 
-- [ ] **T019** — run the full flow live (logged in, and logged out); record results.
+- [x] **T019** — run the full flow live (logged in, and logged out); record results.
 
 ### Tests
 - **[LIVE] oracle:** checklist (SC-001 end state; SC-003 no-submit/no-creds; FR-003 pause).
@@ -834,3 +834,4 @@ items — their oracle is `docs/SELECTOR-CAPTURE.md`, not pytest.
 | G2 | T015 ([no-review] — skipped) | n/a | G2 does not fire: `fill_reply` is coverage-exempt live Playwright. Runtime type detect (textarea/input→`fill()`+`input_value()`; contenteditable Quill→focus/clear/`insert_text`+`inner_text()`; neither→`FillVerifyFailed` abort); `SelectorMiss` if field absent (raise, never guess, FR-011); read-back checked by the **unit-tested** pure `verify_fill_readback` (T014), `FillVerifyFailed` on mismatch. **No-submit guarantee is structural** — verified by grep that the function contains no submit/post-control lookup or click (the only `.click()` focuses the editable field). **No-oracle residue (FR-015):** runtime-detect/no-submit + rendered-equals-response + undetectable-field-aborts are `[no-oracle]`, verified in T016. |
 | G2 | T017 (orchestrator: 7 EARS — decline/gate-names/prompt-written/no-upcoming/no-submit/mismatch-abort/persist-before-fill; cli.run) | clear | spec-match PASS: all 7 criteria satisfied, each multi-limb criterion confirmed to assert every limb (gate names title+due; mismatch asserts abort+preserve+manual-paste; no-upcoming stop limb + report limb via `test_main_reports_discuss_error`). quality PASS: confirm gate un-bypassable (`config.confirm and not confirm`), persist-response precedes fill, only narrow named excepts (`FillVerifyFailed`/`SelectorMiss` at fill, `DiscussError` in main), no unused imports / mutable-default / broad-except. Reviewer noted `_context` is never closed — **by design** (browser is left open with the unsubmitted draft for the operator to review+submit, P-II); added a clarifying comment. 100% line/branch on cli.py; 50/50 suite green. |
 | G2 | T020 ([no-review] — skipped) | n/a | G2 does not fire (docs). README.md authored (install / first-login / editor / launcher / re-verify / principles + the no-submit/no-creds/no-auto-generate guarantees); `docs/SELECTOR-CAPTURE.md` status finalized (capture done). **Aggregate floor green:** 50/50 pytest; every non-exempt module 100% line/branch (cli, config, errors, handoff, portal_parse) — exceeds Constitution §1 (85/75); `desktop-file-validate` PASS; `bash -n launch.sh` OK. |
+| G3-residue | T009/T013/T016/T019 ([LIVE] [no-oracle]) | **OPERATOR-WAIVED — NOT verified live** | The four story-level live verifications were **waived by the operator (2026-06-02), not executed**. These are the FR-015 `[no-oracle]` residue (oracle = the live checklist in `docs/SELECTOR-CAPTURE.md`, against the real logged-in portal). They were **not** run; do **not** read these checkboxes as "verified live". **Residual risk accepted by operator:** the no-submit guarantee (FR-010) and no-credentials-stored (FR-002) are confirmed only by code inspection + fake-based unit tests (T014/T015/T017 + the structural no-submit grep), NOT against the live Blackboard Ultra reply form; likewise the login-pause (FR-003), live soonest-due selection/extraction (T013), and end-to-end flow (T019) are unconfirmed on the real portal. If a live selector or the runtime field-type detection is wrong, these behaviors are unverified. Re-run §3 + the story checklists in `docs/SELECTOR-CAPTURE.md` before relying on the tool against the live portal. |

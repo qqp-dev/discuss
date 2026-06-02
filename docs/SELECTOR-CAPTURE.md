@@ -136,10 +136,10 @@ Watch the `-> '<title>'  <url>` line each save prints: if it says `'Home'` (the
 navigate to the right view and let the identical-page guard re-prompt you.
 
 You should now have, committed under `fixtures/`:
-- [ ] `login_page.html` (logged-out)
-- [ ] `discussions_list.html`
-- [ ] `discussion_page.html`
-- [ ] `reply_form.html`
+- [x] `login_page.html` (logged-out)
+- [x] `discussions_list.html`
+- [x] `discussion_page.html`
+- [x] `reply_form.html`
 
 > Scrub anything personal/identifying from the saved HTML before committing if needed; the
 > fixtures only need the structural markup the parsers target.
