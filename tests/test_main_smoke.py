@@ -13,7 +13,8 @@ import datetime as dt
 import pytest
 
 from discuss import cli
-from discuss.errors import NoUpcomingDiscussion
+from discuss.config import Config
+from discuss.errors import NoUpcomingDiscussion, NotAuthenticated
 
 
 class _FakePage:  # an outermost-boundary stub: a logged-in portal with no discussions
@@ -52,3 +53,69 @@ def test_main_no_class_exits_with_guidance(monkeypatch, capsys):
     monkeypatch.delenv("DISCUSS_TARGET_CLASSES", raising=False)
     assert cli.main() == 2
     assert "DISCUSS_TARGET_CLASSES" in capsys.readouterr().out
+
+
+# --- T029: auth re-sequenced AFTER navigation, with one in-context retry (Esc#2) ----------
+#
+# No-mock smoke EXTENSION (SC-006 discipline): only the outermost live boundary (the stub
+# adapter standing in for the live portal) is faked — the REAL `cli.run` orchestration drives
+# the new navigate → (login? pause + retry once) → proceed seam. The pre-navigation auth check
+# (which a fresh about:blank page could never use to see a post-navigation SSO redirect) is
+# gone; this gates the seam that replaces it.
+
+
+def test_auth_pause_is_post_navigation_with_retry(tmp_path):
+    # the manual-login pause fires AFTER the first navigation, the navigation is retried
+    # EXACTLY once in-context, then the run proceeds to a defined state — and NO auth check
+    # runs before the first navigation (the first recorded event is a navigate, not a pause).
+    events = []
+
+    class _A:
+        def __init__(self):
+            self.nav = 0
+
+        def go_to_discussions(self, page, cid):
+            self.nav += 1
+            events.append("navigate")
+            if self.nav == 1:
+                raise NotAuthenticated("portal redirected to login")
+            # second navigation (post-login) succeeds
+
+        def list_discussions(self, page):
+            return []  # → NoUpcomingDiscussion: a DEFINED downstream state
+
+    def pause(page):
+        events.append("pause")
+
+    cfg = Config.load(
+        {"target_classes": ["_x"], "run_root": tmp_path, "confirm": False, "editor_cmd": ["true"]}
+    )
+    a = _A()
+    with pytest.raises(NoUpcomingDiscussion):
+        cli.run(config=cfg, browser_factory=lambda: (object(), object()), adapter=a,
+                today=dt.date(2026, 6, 1), ensure_logged_in=pause)
+    assert events == ["navigate", "pause", "navigate"]  # pause AFTER nav; exactly one retry
+    assert a.nav == 2
+
+
+def test_login_landing_routes_to_pause_not_selector_miss(tmp_path):
+    # a login landing routes to the manual-login PAUSE path (not surfaced as a SelectorMiss);
+    # if the operator never authenticates, NotAuthenticated propagates after the single retry.
+    events = []
+
+    class _A:
+        def go_to_discussions(self, page, cid):
+            events.append("navigate")
+            raise NotAuthenticated("still on login")  # login persists across the retry
+
+    def pause(page):
+        events.append("pause")
+
+    cfg = Config.load(
+        {"target_classes": ["_x"], "run_root": tmp_path, "confirm": False, "editor_cmd": ["true"]}
+    )
+    with pytest.raises(NotAuthenticated):
+        cli.run(config=cfg, browser_factory=lambda: (object(), object()), adapter=_A(),
+                today=dt.date(2026, 6, 1), ensure_logged_in=pause)
+    # paused (not errored as a SelectorMiss) and retried exactly once before giving up
+    assert events == ["navigate", "pause", "navigate"]

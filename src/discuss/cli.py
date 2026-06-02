@@ -18,7 +18,13 @@ from pathlib import Path
 
 from discuss import browser, handoff, portal_adapter
 from discuss.config import Config
-from discuss.errors import DiscussError, FillVerifyFailed, NoUpcomingDiscussion, SelectorMiss
+from discuss.errors import (
+    DiscussError,
+    FillVerifyFailed,
+    NoUpcomingDiscussion,
+    NotAuthenticated,
+    SelectorMiss,
+)
 from discuss.portal_parse import select_soonest_due
 
 _FALSEY = {"0", "false", "no", "off"}
@@ -70,6 +76,30 @@ def _load_overrides(env=os.environ) -> dict:
     return overrides
 
 
+def _navigate_to_discussions(adapter, page, class_id, *, ensure_logged_in, announce) -> None:
+    """Navigate to the discussions list, pausing for MANUAL login post-navigation if the
+    portal redirects to the SSO login (FR-003, Esc#2).
+
+    The auth check is intentionally AFTER the first navigation: the page opened for a fresh run
+    is ``about:blank``, so a login redirect only becomes visible once we navigate to the portal
+    (the pre-navigation check the first live run shipped could never see it). ``go_to_discussions``
+    raises ``NotAuthenticated`` when it lands on the login page; we then pause for manual login in
+    the SAME context (never automating credentials) and retry the navigation EXACTLY once. A
+    second ``NotAuthenticated`` propagates — one bounded, human-paced retry, no storm
+    (FR-014/FR-016).
+    """
+    try:
+        adapter.go_to_discussions(page, class_id)
+        return
+    except NotAuthenticated:
+        announce(
+            "The portal redirected to the login page. Please log in in the open browser "
+            "window; the run continues automatically once you are signed in."
+        )
+    ensure_logged_in(page)  # pause for manual login in the same context (FR-003)
+    adapter.go_to_discussions(page, class_id)  # retry ONCE; a second NotAuthenticated propagates
+
+
 def run(
     *,
     config: Config,
@@ -84,9 +114,11 @@ def run(
 ) -> None:
     """Run the full pipeline once. Ordering and safety guarantees, top to bottom:
 
-    1. open the context and ``ensure_logged_in`` (a ``NotAuthenticated`` here surfaces);
-    2. navigate + list + ``select_soonest_due`` — ``None`` → ``NoUpcomingDiscussion`` (stop,
-       extract nothing) (FR-014);
+    1. open the context and navigate — auth is checked AFTER navigation (Esc#2): a login
+       redirect pauses for manual login and retries once; a persistent ``NotAuthenticated``
+       surfaces and the run cannot proceed;
+    2. list + ``select_soonest_due`` — ``None`` → ``NoUpcomingDiscussion`` (stop, extract
+       nothing) (FR-014);
     3. **confirmation gate** naming the discussion + due date — declining aborts before any
        extraction (FR-005); a gate disabled in config is skipped;
     4. extract the prompt, write ``prompt.md`` (FR-006), hand off to the session for an
@@ -101,9 +133,11 @@ def run(
     # reviewing and submitting the post themselves (P-II/FR-010). main() is one-shot, so the
     # OS reaps the browser when the operator closes it / the process exits.
     _context, page = browser_factory()
-    ensure_logged_in(page)  # NotAuthenticated propagates — the run cannot proceed
 
-    adapter.go_to_discussions(page, config.target_classes[0])
+    _navigate_to_discussions(
+        adapter, page, config.target_classes[0],
+        ensure_logged_in=ensure_logged_in, announce=announce,
+    )
     selected = select_soonest_due(adapter.list_discussions(page), today)
     if selected is None:
         raise NoUpcomingDiscussion("no discussion has an upcoming due date")
@@ -153,6 +187,7 @@ def validate(
     fixtures_dir=Path("fixtures"),
     class_id: str = "",
     today: dt.date | None = None,
+    ensure_logged_in=browser.ensure_logged_in,
     announce=print,
 ) -> int:
     """Guided live-check: drive each live step on ``page`` and gate it on a single-keypress
@@ -160,16 +195,21 @@ def validate(
     ``fixtures_dir/<step>_live.html`` itself (FR-018), names ``portal_adapter.py`` as the
     one-file fix, and stops — the operator never hand-captures markup. Nothing is submitted.
 
+    The first navigation pauses for MANUAL login and retries once if the portal redirects to
+    the SSO login (FR-003, Esc#2 — the pause is post-navigation, where the redirect is visible).
+
     Returns 0 when every checkpoint is confirmed, 1 when a checkpoint is declined or nothing
-    is upcoming, 3 on a selector miss (a snapshot was written). The ``adapter``/``confirm``/
-    ``announce`` seams are injected so the flow logic is unit-testable with fakes; the live
-    page-recognition residue is T026.
+    is upcoming, 2 when login could not be completed, 3 on a selector miss (a snapshot was
+    written). The ``adapter``/``confirm``/``ensure_logged_in``/``announce`` seams are injected
+    so the flow logic is unit-testable with fakes; the live page-recognition residue is T026.
     """
     if today is None:
         today = dt.date.today()
     step = "navigate"
     try:
-        adapter.go_to_discussions(page, class_id)
+        _navigate_to_discussions(
+            adapter, page, class_id, ensure_logged_in=ensure_logged_in, announce=announce
+        )
         step = "list"
         selected = select_soonest_due(adapter.list_discussions(page), today)
         if selected is None:
@@ -189,6 +229,15 @@ def validate(
         if not confirm("Filled the reply field — your text shows, nothing submitted? [y] "):
             announce("Guided validation stopped: fill not confirmed.")
             return 1
+    except NotAuthenticated as exc:
+        # The login pause + single retry ran and the operator still is not signed in: stop the
+        # walk (routed to the pause path, NOT a misleading selector-miss snapshot). Nothing
+        # was submitted.
+        announce(
+            f"Guided validation stopped: not signed in ({exc}). Log in in the browser "
+            "window, then re-run `discuss validate`."
+        )
+        return 2
     except SelectorMiss as exc:
         snapshot = Path(fixtures_dir) / f"{step}_live.html"
         # FR-018: the tool must capture the live markup ITSELF — create the fixtures dir if
@@ -208,14 +257,14 @@ def validate(
 
 def _run_validate(config: Config) -> int:
     """Wire the real live dependencies for ``discuss validate`` (FR-017): open the operator's
-    persistent context, pause for manual login, then run the guided walk against the real
-    adapter. Fails loud (rc 2) with guidance when no class is configured, before any browser
-    is opened."""
+    persistent context, then run the guided walk against the real adapter. The manual-login
+    pause is INSIDE the walk, after the first navigation (Esc#2) — there is no pre-navigation
+    auth check here. Fails loud (rc 2) with guidance when no class is configured, before any
+    browser is opened."""
     if not config.target_classes:
         print(_NO_CLASS_MESSAGE)
         return 2
     _context, page = browser.open_persistent_context(config.profile_dir)
-    browser.ensure_logged_in(page)
     return validate(
         page,
         adapter=portal_adapter,

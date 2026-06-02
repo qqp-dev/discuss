@@ -46,12 +46,14 @@ def test_no_upcoming_due_stops(fake_ctx):
 
 
 def test_not_authenticated_surfaces(fake_ctx):
-    # edge: NotAuthenticated from ensure_logged_in surfaces (run aborts, nothing filled).
-    def boom(page):
-        raise NotAuthenticated("operator aborted manual login")
+    # edge (post-Esc#2 re-sequencing): a persistent login landing — the adapter raises
+    # NotAuthenticated even after the post-navigation pause + single retry — surfaces; the run
+    # aborts, nothing filled. (Auth is no longer checked on the fresh page before navigation.)
+    def boom(page, cid):
+        raise NotAuthenticated("login persisted across the retry")
 
     kwargs = fake_ctx.kwargs
-    kwargs["ensure_logged_in"] = boom
+    kwargs["adapter"].go_to_discussions = boom  # instance attr shadows the method (unbound)
     with pytest.raises(NotAuthenticated):
         cli.run(**kwargs)
     assert fake_ctx.adapter.filled is False

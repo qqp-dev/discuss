@@ -14,7 +14,7 @@ import pytest
 
 from discuss import cli
 from discuss.config import Config
-from discuss.errors import SelectorMiss
+from discuss.errors import NotAuthenticated, SelectorMiss
 from discuss.portal_parse import Discussion
 
 
@@ -194,9 +194,11 @@ def test_run_validate_requires_a_target_class(capsys):
     assert "DISCUSS_TARGET_CLASSES" in capsys.readouterr().out
 
 
-def test_run_validate_opens_context_logs_in_and_walks(monkeypatch):
-    # the live wrapper opens the PERSISTENT context, pauses for login, then runs the guided
-    # walk against the real adapter — all live calls stubbed so no browser is touched.
+def test_run_validate_opens_context_and_walks(monkeypatch):
+    # the live wrapper opens the PERSISTENT context, then runs the guided walk against the real
+    # adapter. Post-Esc#2 there is NO pre-navigation login pause here — the manual-login pause
+    # now lives INSIDE the walk, after the first navigation (so it can see the SSO redirect).
+    # All live calls stubbed so no browser is touched.
     calls = {}
 
     def fake_open(profile_dir):
@@ -205,7 +207,7 @@ def test_run_validate_opens_context_logs_in_and_walks(monkeypatch):
 
     monkeypatch.setattr(cli.browser, "open_persistent_context", fake_open)
     monkeypatch.setattr(cli.browser, "ensure_logged_in",
-                        lambda page: calls.__setitem__("logged_in", page))
+                        lambda page: calls.__setitem__("pre_nav_pause", page))
 
     def fake_validate(page, *, adapter, class_id, **kw):
         calls["validate"] = (page, adapter, class_id)
@@ -217,4 +219,19 @@ def test_run_validate_opens_context_logs_in_and_walks(monkeypatch):
     assert calls["validate"][0] == "page"            # the opened page was walked
     assert calls["validate"][1] is cli.portal_adapter  # against the REAL adapter
     assert calls["validate"][2] == "_x_1"            # for the configured class
-    assert calls["logged_in"] == "page"              # login pause happened first
+    assert "pre_nav_pause" not in calls              # NO auth check before navigation (Esc#2)
+
+
+def test_validate_reports_not_authenticated(tmp_path):
+    # a persistent login landing inside the guided walk: the post-navigation pause + single
+    # retry runs, and if login is never resolved the walk stops with a non-zero rc — routed to
+    # the pause path, not a crash and not a misleading selector-miss snapshot.
+    class _A(FakeAdapter):
+        def go_to_discussions(self, page, class_id):
+            raise NotAuthenticated("login persisted across the retry")
+
+    adapter = _A()
+    rc = cli.validate(fake_page_factory(), adapter=adapter, confirm=lambda p: True,
+                      fixtures_dir=tmp_path, ensure_logged_in=lambda page: None)
+    assert rc == 2
+    assert adapter.filled is False
