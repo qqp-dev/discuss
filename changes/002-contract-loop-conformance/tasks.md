@@ -141,7 +141,7 @@ sources — `changes/001-…/spec.md`, `constitution.md` §6 principles P-I..P-I
     every change carries `contract-impact.md` at done; the `contract-currency` reviewer gates
     G3; coverage policy lives in `constitution.md`.
 
-- [ ] **T002 — RED → GREEN → REFACTOR**
+- [x] **T002 — RED → GREEN → REFACTOR**
   - RED: append to `tests/test_contract_conformance.py`:
 
 ```python
@@ -515,3 +515,4 @@ per task is the resumable handoff state.
 |------|--------|---------|--------------|
 | G1 (design exit) | spec+plan+tasks+sign-off | clear (after 1 bounce) | testability BLOCK→PASS: FR-001/I3 was a multi-limb criterion whose I3-negative limb was unasserted; split into a structural non-subordination sentinel + a distinct `[no-oracle]`. completeness/scope/sign-off-faithfulness PASS. No-oracle residue (2: B1 prose-fidelity, I3-negative absence) routed to operator via sign-off § No-oracle Admissions. |
 | G2 (T001) | test_contract_schemas_vendored | n/a — skipped | `[no-review]` task; touches only exempt schema globs (`method/schemas/**`) + the conformance test module. No production code for a panel to judge. |
+| G2 (T002) | test_contract_exists_declares_source_of_truth | n/a — skipped | `[no-review]` per the tasks preamble (docs/methodology only). The contract's 001-fidelity (B1) is the deferred deep judgment, gated at T008 + the G3 `contract-currency`/`spec-match` panel — no production code for a G2 panel. |
