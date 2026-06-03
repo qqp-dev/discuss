@@ -207,7 +207,7 @@ change is gated; the archive log is human-readable.
 `contract-currency` reviewer as a **G3** done-gate concern, and requiring every change to carry
 a `contract-impact.md` at done.
 
-- [ ] **T003 — RED → GREEN → REFACTOR**
+- [x] **T003 — RED → GREEN → REFACTOR**
   - RED: append:
 
 ```python
@@ -245,7 +245,7 @@ The constitution.md SHALL declare Contract Loop adoption, name the contract-curr
 
 **Expected behavior (FR-005):** a human-readable archive log with entries for 001 and 002.
 
-- [ ] **T004 — RED → GREEN → REFACTOR**
+- [x] **T004 — RED → GREEN → REFACTOR**
   - RED: append:
 
 ```python
@@ -516,3 +516,5 @@ per task is the resumable handoff state.
 | G1 (design exit) | spec+plan+tasks+sign-off | clear (after 1 bounce) | testability BLOCK→PASS: FR-001/I3 was a multi-limb criterion whose I3-negative limb was unasserted; split into a structural non-subordination sentinel + a distinct `[no-oracle]`. completeness/scope/sign-off-faithfulness PASS. No-oracle residue (2: B1 prose-fidelity, I3-negative absence) routed to operator via sign-off § No-oracle Admissions. |
 | G2 (T001) | test_contract_schemas_vendored | n/a — skipped | `[no-review]` task; touches only exempt schema globs (`method/schemas/**`) + the conformance test module. No production code for a panel to judge. |
 | G2 (T002) | test_contract_exists_declares_source_of_truth | n/a — skipped | `[no-review]` per the tasks preamble (docs/methodology only). The contract's 001-fidelity (B1) is the deferred deep judgment, gated at T008 + the G3 `contract-currency`/`spec-match` panel — no production code for a G2 panel. |
+| G2 (T003) | test_constitution_declares_contract_loop | n/a — skipped | `[no-review]` docs task (constitution.md amendment); no `src/` production code. |
+| G2 (T004) | test_changelog_has_001_and_002 | n/a — skipped | `[no-review]` docs task (new CHANGELOG.md); no `src/` production code. |

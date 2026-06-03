@@ -31,3 +31,17 @@ def test_contract_exists_declares_source_of_truth():
     # I2: reads as current truth — sanity-check the behavior-narrative sections are present.
     for marker in ("pipeline", "safety", "adapter"):
         assert marker in text, f"contract must describe the {marker} surface (I2)"
+
+
+def test_constitution_declares_contract_loop():
+    text = _read("constitution.md").lower()
+    assert "contract loop" in text, "constitution must declare Contract Loop adoption"
+    assert "contract-currency" in text, "must name the contract-currency G3 reviewer"
+    assert "contract-impact.md" in text, "must require a per-change contract-impact.md"
+    assert "g3" in text, "must name the G3 done-gate"
+
+
+def test_changelog_has_001_and_002():
+    text = _read("CHANGELOG.md")
+    assert "001" in text and "discussion-draft-pipeline" in text, "CHANGELOG must record change 001"
+    assert "002" in text and "contract-loop-conformance" in text, "CHANGELOG must record change 002"
