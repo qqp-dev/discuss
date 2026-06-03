@@ -114,8 +114,13 @@ record a future builder should not have to re-learn.
   render+auth+session redesign. When deferring irreducibly-live work, enumerate the *kinds* of
   failure it stands in for (value drift? rendering lifecycle? auth flow? session lifetime?) so
   the recovery budget matches the blast radius.
-- **Contract-collapse recorded N/A, not fabricated.** This project is a minimal portable-core
-  adoption with no `contract.md` / contract-impact schema / currency reviewer / lint vendored.
-  Rather than invent that substrate (design's lane), the change's behavioral record stays in
-  `spec.md` v0.3 + the tasks Review Log + this package. A future builder who *does* vendor the
-  Contract Loop should collapse this feature's criteria into the new `contract.md` then.
+- **Contract-collapse recorded N/A, then retroactively closed.** At 001's done-time this project
+  was a minimal portable-core adoption with no `contract.md` / contract-impact schema / currency
+  reviewer / lint vendored, so rather than invent that substrate (design's lane) the change's
+  behavioral record stayed in `spec.md` v0.3 + the tasks Review Log + this package, with a note
+  that a future builder who *does* vendor the Contract Loop should collapse 001's criteria into a
+  new `contract.md`. **Change 002 (`contract-loop-conformance`) did exactly that:** it vendored
+  the Contract Loop, authored the genesis `contract.md`, and retroactively, gate-verifiably
+  collapsed 001 into it — see `changes/001-discussion-draft-pipeline/contract-impact.md` (the
+  authored declaration that replaces this N/A) and the `contract-currency` reviewer's recorded
+  PASS in the 002 package.

@@ -65,3 +65,8 @@ def test_002_contract_impact_wellformed():
     d = ROOT / "changes" / "002-contract-loop-conformance"
     r = subprocess.run([LINT, str(d)], capture_output=True, text=True)
     assert r.returncode == 0, (r.stderr or r.stdout)
+
+
+def test_001_learnings_references_contract_impact():
+    text = _read("changes/001-discussion-draft-pipeline/learnings.md")
+    assert "contract-impact.md" in text, "001 learnings must reference the authored declaration"

@@ -377,7 +377,7 @@ WHEN lint-contract-impact is run over change 002's contract-impact.md, it SHALL 
 **Expected behavior (FR-009):** the note references the now-authored declaration instead of
 recording `N/A`.
 
-- [ ] **T007 — RED → GREEN → REFACTOR**
+- [x] **T007 — RED → GREEN → REFACTOR**
   - RED: append:
 
 ```python
@@ -520,3 +520,4 @@ per task is the resumable handoff state.
 | G2 (T004) | test_changelog_has_001_and_002 | n/a — skipped | `[no-review]` docs task (new CHANGELOG.md); no `src/` production code. |
 | G2 (T005) | test_001_contract_impact_wellformed + ..._is_nonempty_list | n/a — skipped | `[no-review]` docs task (001's contract-impact.md declaration). D1 well-formedness verified by the real `lint-contract-impact.sh`; B1/B2 semantic judgment is T008's currency gate. No `src/` production code. |
 | G2 (T006) | test_002_contract_impact_wellformed | n/a — skipped | `[no-review]` docs task (002's own contract-impact.md). D1 verified by the real lint; B1/B2 deferred to the G3 `contract-currency` reviewer. No `src/` production code. |
+| G2 (T007) | test_001_learnings_references_contract_impact | n/a — skipped | `[no-review]` docs task (001 learnings note); no `src/` production code. Historical context preserved; forward reference to the declaration + recorded PASS added. |
