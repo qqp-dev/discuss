@@ -51,6 +51,11 @@ phase: handoff
   a behavior; this is adjudicated by the independent `contract-currency` reviewer (B1) at G3/T008
   and the operator. Every *mechanical* conformance fact (artifacts exist, declarations
   well-formed, constitution amended) does have a committed pytest oracle.
+- **`contract.md` contains no statement subordinating it to the archive** (I3 negative limb). No
+  oracle because: the *presence* of the explicit non-subordination declaration is tested
+  structurally (`test_contract_exists_declares_source_of_truth`), but the *absence* of any
+  contradicting statement anywhere in the prose is an unprovable absence — adjudicated by the
+  completeness/`contract-currency` reviewer + operator.
 
 ## Scope & Cost
 

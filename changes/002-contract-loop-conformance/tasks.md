@@ -149,7 +149,11 @@ def test_contract_exists_declares_source_of_truth():
     contract = ROOT / "contract.md"
     assert contract.is_file(), "root contract.md must exist (I1)"
     text = contract.read_text(encoding="utf-8").lower()
-    assert "source of truth" in text, "contract must name itself the source of truth (I3)"
+    assert "source of truth" in text, "contract must name itself the source of truth (I3+)"
+    # I3 negative limb (presence of the explicit non-subordination declaration):
+    assert ("not subordinate to the archive" in text
+            or "never subordinate to the archive" in text), \
+        "contract must explicitly declare it is not subordinate to the archive (I3-)"
     # I2: reads as current truth — sanity-check the behavior-narrative sections are present.
     for marker in ("pipeline", "safety", "adapter"):
         assert marker in text, f"contract must describe the {marker} surface (I2)"
@@ -169,12 +173,15 @@ def test_contract_exists_declares_source_of_truth():
   declaration or a section marker reds it.
 - **Deep (deferred to T008/G3):** "reflects every 001 criterion" (B1) — `[no-oracle]` here;
   judged by the `contract-currency` reviewer.
-- **Edge cases:** I3 negative (subordinate-to-archive) — guarded by the REFACTOR read + the G3
-  reviewer, not a brittle substring test.
+- **I3 negative (two limbs):** *presence* of the explicit non-subordination declaration is
+  tested structurally (the sentinel assertion above, falsifiable); *absence* of any
+  contradicting statement anywhere is `[no-oracle]` — the REFACTOR read + the completeness/G3
+  reviewer adjudicate (an absence is not deterministically provable).
 
 ```ears
-The repository SHALL contain exactly one root contract.md that reads as current truth standalone, names itself the source of truth, and does not declare itself subordinate to the archive. [test: test_contract_exists_declares_source_of_truth]
+The repository SHALL contain exactly one root contract.md that reads as current truth standalone, names itself the source of truth, and includes an explicit declaration that it is not subordinate to the archive. [test: test_contract_exists_declares_source_of_truth]
 The contract.md SHALL faithfully reflect every behavioral acceptance criterion of change 001. [no-oracle]
+The contract.md SHALL contain no statement anywhere that subordinates it to the archive (I3 negative; absence not deterministically provable). [no-oracle]
 ```
 
 **Acceptance criterion:** `contract.md` exists, declares source-of-truth, covers the 10
@@ -506,3 +513,4 @@ per task is the resumable handoff state.
 
 | Gate | Anchor | Verdict | Key findings |
 |------|--------|---------|--------------|
+| G1 (design exit) | spec+plan+tasks+sign-off | clear (after 1 bounce) | testability BLOCK→PASS: FR-001/I3 was a multi-limb criterion whose I3-negative limb was unasserted; split into a structural non-subordination sentinel + a distinct `[no-oracle]`. completeness/scope/sign-off-faithfulness PASS. No-oracle residue (2: B1 prose-fidelity, I3-negative absence) routed to operator via sign-off § No-oracle Admissions. |

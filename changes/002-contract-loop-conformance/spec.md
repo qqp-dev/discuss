@@ -159,8 +159,11 @@ declaration + merged diff returns PASS, recorded as evidence in the change packa
 - **Retrieving 001's merged diff.** 001 is already merged (commit `496e8c1`); the currency
   reviewer's CHANGESET input is the merge's diff range, not a working-tree diff. The gate task
   must resolve that range (the first-parent range of the 001 merge) and feed it to the reviewer.
-- **I3 authoring guard.** The contract must never declare itself subordinate to the archive;
-  the authoring task and a structural oracle guard this.
+- **I3 authoring guard.** The contract must never declare itself subordinate to the archive.
+  This splits into two limbs: the *presence* of an explicit non-subordination declaration (a
+  structural sentinel oracle in `test_contract_exists_declares_source_of_truth`), and the
+  *absence* of any contradicting statement anywhere (an unprovable absence — carried as a
+  distinct `[no-oracle]`, adjudicated by the completeness/currency reviewer + operator).
 - **`none`-mis-declaration trap.** 001 changed real behavior, so its declaration MUST be a
   non-empty impact list, never `none (internal-only)` — a `none` here would be a B2 BLOCK.
 
@@ -228,7 +231,7 @@ The four Contract Loop artifacts, and how `discuss` realizes each:
 ### 4.2 Acceptance Criteria (EARS)
 
 ```ears
-The repository SHALL contain exactly one root contract.md that reads as current truth standalone, names itself the source of truth, and does not declare itself subordinate to the archive. [test: test_contract_exists_declares_source_of_truth]
+The repository SHALL contain exactly one root contract.md that reads as current truth standalone, names itself the source of truth, and includes an explicit declaration that it is not subordinate to the archive. [test: test_contract_exists_declares_source_of_truth]
 The constitution.md SHALL declare Contract Loop adoption, name the contract-currency reviewer as a G3 done-gate concern, and require every change to carry a contract-impact.md at done. [test: test_constitution_declares_contract_loop]
 The repository SHALL contain method/schemas/contract.md and method/schemas/contract-impact.md vendored by copy. [test: test_contract_schemas_vendored]
 The repository SHALL contain a CHANGELOG.md archive log with entries for changes 001 and 002. [test: test_changelog_has_001_and_002]
@@ -239,6 +242,7 @@ WHEN the contract-currency reviewer is dispatched on change 001's anchor, contra
 Change 001's learnings.md SHALL reference the authored contract-impact.md in place of the recorded `N/A` contract-collapse note. [test: test_001_learnings_references_contract_impact]
 IF the conformance change modifies any file under src/, THEN the change SHALL be rejected. [test: test_no_src_modules_changed]
 The contract.md SHALL faithfully reflect every behavioral acceptance criterion of change 001 (no deterministic test proves prose fidelity; the independent contract-currency reviewer and the operator adjudicate). [no-oracle]
+The contract.md SHALL contain no statement anywhere that subordinates it to the archive (I3 negative — the explicit non-subordination declaration is tested structurally above; the *absence* of any contradicting statement cannot be proven by a deterministic test, so the completeness-consistency / contract-currency reviewer and the operator adjudicate). [no-oracle]
 ```
 
 ## 5. Assumptions
