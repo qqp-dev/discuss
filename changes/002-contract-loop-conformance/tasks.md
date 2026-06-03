@@ -461,7 +461,7 @@ WHEN the contract-currency reviewer is dispatched on change 001's anchor, contra
 **Expected behavior (FR-010):** prove the change touched no `src/` production module; the full
 suite stays green at the constitution's coverage thresholds (line 85 / branch 75).
 
-- [ ] **T009 — RED → GREEN → REFACTOR**
+- [x] **T009 — RED → GREEN → REFACTOR**
   - RED: append:
 
 ```python
