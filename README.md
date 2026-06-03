@@ -44,11 +44,16 @@ This puts a `discuss` console-script on your PATH (inside the venv).
 The tool drives a **persistent** browser profile (default `./profile/`, gitignored) that
 holds *your* session — it never sees a password. Establish that session once:
 
-1. Run `discuss` (or click the launcher). A real Chromium window opens.
-2. If you land on the UOPX login page, the tool **pauses** and prompts you in the terminal.
-   Log in by hand in the browser window, then press **Enter** in the terminal to continue.
-3. The session is now saved in `profile/`; future runs reuse it until it expires (then you
-   just log in by hand again on the next run).
+1. Run `discuss` (or click the launcher). A real Chromium window opens and the tool
+   navigates to your portal.
+2. If that navigation redirects to the UOPX login (the SSO login screen), the tool
+   **pauses** and prompts you in the terminal. Log in by hand in the browser window — and
+   choose **"keep me signed in" / "trust this device"** when offered, so the portal issues a
+   *persistent* session and you are **not** asked to repeat two-step verification on every
+   run. Then press **Enter** in the terminal; the tool retries the navigation and continues.
+3. The session is now saved in `profile/`; future runs reuse it directly — they go straight
+   to your discussions with no fresh login or repeat 2FA, until the session genuinely expires
+   (then you just log in by hand once more on the next run).
 
 No credential is ever read from or written to disk by the tool (FR-002).
 
