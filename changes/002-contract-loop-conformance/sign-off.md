@@ -77,7 +77,7 @@ phase: handoff
 > (everything above this `## Signature` heading). The operator stamps it via
 > `sign-off.sh --feature 002-contract-loop-conformance` or by hand; design never self-stamps.
 
-status: UNSIGNED
-operator:
-signed_at:
-artifacts_hash:
+status: SIGNED
+operator: abacus-git
+signed_at: 2026-06-02
+artifacts_hash: 13dc53acdd801d64db06df80e981487e9770ff4dfc3fca5ffb0c131f3af73888

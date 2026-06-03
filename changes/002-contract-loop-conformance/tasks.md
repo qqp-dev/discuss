@@ -419,7 +419,7 @@ context-starved subagent, substituting its four placeholders, and record the ret
 - **CHANGESET** = 001's merged diff: `git diff 496e8c1^1..496e8c1` (Q2). If that range does not
   resolve to 001's content, reconstruct the 001 changeset before dispatching.
 
-- [ ] **T008 — dispatch + record**
+- [x] **T008 — dispatch + record**
   - Resolve the CHANGESET (Q2). Dispatch the reviewer subagent with the four inputs.
   - Write the returned JSON object to `evidence-001-currency-verdict.json`.
   - RED→GREEN test (append):
@@ -521,3 +521,4 @@ per task is the resumable handoff state.
 | G2 (T005) | test_001_contract_impact_wellformed + ..._is_nonempty_list | n/a — skipped | `[no-review]` docs task (001's contract-impact.md declaration). D1 well-formedness verified by the real `lint-contract-impact.sh`; B1/B2 semantic judgment is T008's currency gate. No `src/` production code. |
 | G2 (T006) | test_002_contract_impact_wellformed | n/a — skipped | `[no-review]` docs task (002's own contract-impact.md). D1 verified by the real lint; B1/B2 deferred to the G3 `contract-currency` reviewer. No `src/` production code. |
 | G2 (T007) | test_001_learnings_references_contract_impact | n/a — skipped | `[no-review]` docs task (001 learnings note); no `src/` production code. Historical context preserved; forward reference to the declaration + recorded PASS added. |
+| T008 currency dispatch (on 001) | 001 §4.2 EARS · contract §2–§9 · 001 contract-impact.md · 001 merged diff (496e8c1^1..496e8c1) | **PASS** | Context-starved `contract-currency` reviewer (operator-home prompt) dispatched with the four inputs only. 18 behavioral criteria `satisfied` (no B1 staleness — every 001 behavior has a home section; no B2 mis-declaration — all-`added` genesis declaration consistent with the all-new-file diff). 2 findings `no-oracle`: the [no-oracle]-marked live render-wait + cross-launch session-persistence criteria — 001's pre-existing irreducibly-live residue, already operator-attested deferred/live at 001's own done, not decidable from the four inputs and not reopened by this collapse. Verdict recorded: `evidence-001-currency-verdict.json`. |

@@ -70,3 +70,10 @@ def test_002_contract_impact_wellformed():
 def test_001_learnings_references_contract_impact():
     text = _read("changes/001-discussion-draft-pipeline/learnings.md")
     assert "contract-impact.md" in text, "001 learnings must reference the authored declaration"
+
+
+def test_001_currency_verdict_recorded_pass():
+    p = ROOT / "changes" / "002-contract-loop-conformance" / "evidence-001-currency-verdict.json"
+    assert p.is_file(), "currency verdict evidence must be recorded (FR-008)"
+    verdict = json.loads(p.read_text(encoding="utf-8"))
+    assert verdict.get("verdict") == "PASS", f"currency reviewer must PASS on the 001 collapse, got {verdict.get('verdict')}"
