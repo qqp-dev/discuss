@@ -45,3 +45,23 @@ def test_changelog_has_001_and_002():
     text = _read("CHANGELOG.md")
     assert "001" in text and "discussion-draft-pipeline" in text, "CHANGELOG must record change 001"
     assert "002" in text and "contract-loop-conformance" in text, "CHANGELOG must record change 002"
+
+
+@pytest.mark.skipif(LINT is None, reason="operator-home lint-contract-impact.sh not on PATH")
+def test_001_contract_impact_wellformed():
+    d = ROOT / "changes" / "001-discussion-draft-pipeline"
+    r = subprocess.run([LINT, str(d)], capture_output=True, text=True)
+    assert r.returncode == 0, (r.stderr or r.stdout)
+
+
+def test_001_contract_impact_is_nonempty_list():
+    text = _read("changes/001-discussion-draft-pipeline/contract-impact.md")
+    assert "none (internal-only)" not in text, "001 changed behavior — must not declare none (B2 trap)"
+    assert "section:" in text and "kind:" in text, "001 declaration must be a non-empty impact list"
+
+
+@pytest.mark.skipif(LINT is None, reason="operator-home lint-contract-impact.sh not on PATH")
+def test_002_contract_impact_wellformed():
+    d = ROOT / "changes" / "002-contract-loop-conformance"
+    r = subprocess.run([LINT, str(d)], capture_output=True, text=True)
+    assert r.returncode == 0, (r.stderr or r.stdout)

@@ -294,7 +294,7 @@ PASSes on 001; 001's learnings reference the declaration.
 naming the actual `contract.md` sections 001's behavior collapses into, consistent with 001's
 diff (D2).
 
-- [ ] **T005 — RED → GREEN → REFACTOR**
+- [x] **T005 — RED → GREEN → REFACTOR**
   - RED: append:
 
 ```python
@@ -342,7 +342,7 @@ the test module.
 **Expected behavior (FR-007):** this change's own declaration — `added`: the contract substrate
 + the Methodology/Contract-Loop-status section it introduces.
 
-- [ ] **T006 — RED → GREEN → REFACTOR**
+- [x] **T006 — RED → GREEN → REFACTOR**
   - RED: append:
 
 ```python
@@ -518,3 +518,5 @@ per task is the resumable handoff state.
 | G2 (T002) | test_contract_exists_declares_source_of_truth | n/a — skipped | `[no-review]` per the tasks preamble (docs/methodology only). The contract's 001-fidelity (B1) is the deferred deep judgment, gated at T008 + the G3 `contract-currency`/`spec-match` panel — no production code for a G2 panel. |
 | G2 (T003) | test_constitution_declares_contract_loop | n/a — skipped | `[no-review]` docs task (constitution.md amendment); no `src/` production code. |
 | G2 (T004) | test_changelog_has_001_and_002 | n/a — skipped | `[no-review]` docs task (new CHANGELOG.md); no `src/` production code. |
+| G2 (T005) | test_001_contract_impact_wellformed + ..._is_nonempty_list | n/a — skipped | `[no-review]` docs task (001's contract-impact.md declaration). D1 well-formedness verified by the real `lint-contract-impact.sh`; B1/B2 semantic judgment is T008's currency gate. No `src/` production code. |
+| G2 (T006) | test_002_contract_impact_wellformed | n/a — skipped | `[no-review]` docs task (002's own contract-impact.md). D1 verified by the real lint; B1/B2 deferred to the G3 `contract-currency` reviewer. No `src/` production code. |
