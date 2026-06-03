@@ -116,3 +116,30 @@ should not pass a review gate.
   reading the resulting state back (e.g. the reply field's rendered content equals the
   intended text), never by trusting that the call returned without error. `fill()`
   returning is not proof the text landed.
+
+---
+
+## 7. Contract Loop adoption
+
+`discuss` adopts portable-core's **Contract Loop** (`method/schemas/contract.md`), vendored
+**by copy** into `method/schemas/` — there is no runtime link to portable-core. The model has
+four artifacts and one lifecycle:
+
+- **The contract is the single current truth.** The root `contract.md` is the source of truth
+  for what `discuss` does and why; the implementation under `src/` is its regenerable
+  projection. There is exactly one contract, readable standalone, never subordinate to the
+  archive.
+- **Every change carries a `contract-impact.md` at done.** Each change package
+  (`changes/NNN-slug/`) stays physically separate from the contract until archive and MUST
+  carry a `changes/NNN-slug/contract-impact.md` (schema `method/schemas/contract-impact.md`)
+  declaring how it touches the contract. This is validated deterministically by
+  `lint-contract-impact.sh` (the floor) before any reviewer is dispatched.
+- **Collapse at archive.** At finishing, the change's delta is collapsed into **exactly the
+  declared** `contract.md` sections, updating them to current truth, while leaving the archive
+  (git history + `CHANGELOG.md` + the retired package) intact.
+- **Currency is a G3 done-gate concern.** The independent `contract-currency` reviewer is a
+  concern on the **G3** completion panel: it BLOCKs a **stale** contract (a behavioral
+  acceptance criterion asserts a behavior absent from the contract — B1) or a **mis-declared**
+  impact (the declaration contradicts the diff — B2). A change is **not done** while the
+  contract is stale with respect to it; the collapse that clears it happens at archive /
+  finishing, never on the builder's say-so.

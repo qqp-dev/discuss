@@ -1,0 +1,17 @@
+G1 doc-review panel: ALL-CLEAR (no BLOCK)
+feature: 002-contract-loop-conformance
+date: 2026-06-02
+floor: lint-spec-flow.sh --artifact-quality-floor → spec-flow-readiness: PASS
+
+panel (independent, context-starved reviewers — review-verdict schema):
+- testability:               PASS  (after 1 bounce: split the FR-001/I3 multi-limb criterion;
+                                    the I3-negative absence is now its own [no-oracle])
+- completeness-consistency:  PASS  (every FR-001..010 maps to a task + oracle; file maps agree)
+- scope:                     PASS  (single coherent Contract-Loop adoption; no smuggled feature)
+- sign-off-faithfulness:     PASS  (ledger discloses all 3 forks, 3 assumptions, 2 no-oracle items)
+
+human-residue (no-oracle, routed to the operator via sign-off.md § No-oracle Admissions):
+- contract.md faithfully reflects every behavioral 001 criterion (deep B1 prose fidelity)
+- contract.md contains no statement subordinating it to the archive (I3-negative absence)
+
+build-launch gate: operator signature on sign-off.md (SIGNED + matching hash) — NOT yet stamped.
