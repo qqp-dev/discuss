@@ -1,0 +1,302 @@
+"""`discuss` console-script entry point + the orchestrator pipeline (T017).
+
+``run()`` wires the pieces into the one-click flow (FR-001): open the persistent context →
+pause for manual login if needed → navigate to the soonest-due discussion → confirm with
+the operator → extract the prompt → hand off to a primed session for an operator-edited
+draft → inject that draft into the reply field WITHOUT submitting. The adapter, the
+session, and the login/confirm/announce seams are all injected so the whole pipeline is
+testable with fakes (tests/test_cli_pipeline.py); ``main()`` supplies the real
+implementations and is verified end-to-end live in T019.
+"""
+
+from __future__ import annotations
+
+import datetime as dt
+import os
+import sys
+from pathlib import Path
+
+from discuss import browser, handoff, portal_adapter
+from discuss.config import Config
+from discuss.errors import (
+    DiscussError,
+    FillVerifyFailed,
+    NoUpcomingDiscussion,
+    NotAuthenticated,
+    SelectorMiss,
+)
+from discuss.portal_parse import select_soonest_due
+
+_FALSEY = {"0", "false", "no", "off"}
+
+# Operator guidance when no target class is configured — shared by the pipeline and the
+# `validate` subcommand so the one fail-loud message lives in a single place.
+_NO_CLASS_MESSAGE = (
+    "discuss: no target class configured. Set DISCUSS_TARGET_CLASSES to one or more "
+    "class ids,\n  e.g.  DISCUSS_TARGET_CLASSES=_577963_1 discuss\n"
+    "  (find the id in the course URL: .../ultra/courses/<class_id>/...)."
+)
+
+# The placeholder reply `discuss validate` injects so the operator can eyeball that the
+# fill lands in the right field and renders — it is never submitted (FR-010).
+_VALIDATE_SAMPLE = "discuss validate — sample reply (this is NOT submitted)."
+
+
+def _confirm_via_input(prompt: str) -> bool:
+    """Default confirmation gate: ask the operator and accept only an explicit yes."""
+    return input(prompt).strip().lower() in ("y", "yes")
+
+
+def _load_overrides(env=os.environ) -> dict:
+    """Gather config overrides from the environment (config.py delegates this to cli).
+
+    Recognised vars (each absent → no key, so the documented default wins):
+      DISCUSS_TARGET_CLASSES  comma-separated class ids (e.g. ``_577963_1,_x_2``)
+      DISCUSS_EDITOR          a ``--wait``-style editor command (space-separated)
+      DISCUSS_PROFILE_DIR     persistent browser profile dir
+      DISCUSS_RUN_ROOT        parent dir for per-run working dirs
+      DISCUSS_CONFIRM         set to a falsey value (0/false/no/off) to disable the gate
+    """
+    overrides: dict = {}
+    classes = env.get("DISCUSS_TARGET_CLASSES", "").strip()
+    if classes:
+        overrides["target_classes"] = [c.strip() for c in classes.split(",") if c.strip()]
+    editor = env.get("DISCUSS_EDITOR", "").strip()
+    if editor:
+        overrides["editor_cmd"] = editor.split()
+    profile = env.get("DISCUSS_PROFILE_DIR", "").strip()
+    if profile:
+        overrides["profile_dir"] = Path(profile)
+    run_root = env.get("DISCUSS_RUN_ROOT", "").strip()
+    if run_root:
+        overrides["run_root"] = Path(run_root)
+    confirm = env.get("DISCUSS_CONFIRM", "").strip()
+    if confirm:
+        overrides["confirm"] = confirm.lower() not in _FALSEY
+    return overrides
+
+
+def _navigate_to_discussions(adapter, page, class_id, *, ensure_logged_in, announce) -> None:
+    """Navigate to the discussions list, pausing for MANUAL login post-navigation if the
+    portal redirects to the SSO login (FR-003, Esc#2).
+
+    The auth check is intentionally AFTER the first navigation: the page opened for a fresh run
+    is ``about:blank``, so a login redirect only becomes visible once we navigate to the portal
+    (the pre-navigation check the first live run shipped could never see it). ``go_to_discussions``
+    raises ``NotAuthenticated`` when it lands on the login page; we then pause for manual login in
+    the SAME context (never automating credentials) and retry the navigation EXACTLY once. A
+    second ``NotAuthenticated`` propagates — one bounded, human-paced retry, no storm
+    (FR-014/FR-016).
+    """
+    try:
+        adapter.go_to_discussions(page, class_id)
+        return
+    except NotAuthenticated:
+        announce(
+            "The portal redirected to the login page. Please log in in the open browser "
+            "window; the run continues automatically once you are signed in."
+        )
+    ensure_logged_in(page)  # pause for manual login in the same context (FR-003)
+    adapter.go_to_discussions(page, class_id)  # retry ONCE; a second NotAuthenticated propagates
+
+
+def run(
+    *,
+    config: Config,
+    browser_factory,
+    adapter,
+    today: dt.date,
+    session=handoff.run_session,
+    ensure_logged_in=browser.ensure_logged_in,
+    make_run_dir=handoff.make_run_dir,
+    confirm=_confirm_via_input,
+    announce=print,
+) -> None:
+    """Run the full pipeline once. Ordering and safety guarantees, top to bottom:
+
+    1. open the context and navigate — auth is checked AFTER navigation (Esc#2): a login
+       redirect pauses for manual login and retries once; a persistent ``NotAuthenticated``
+       surfaces and the run cannot proceed;
+    2. list + ``select_soonest_due`` — ``None`` → ``NoUpcomingDiscussion`` (stop, extract
+       nothing) (FR-014);
+    3. **confirmation gate** naming the discussion + due date — declining aborts before any
+       extraction (FR-005); a gate disabled in config is skipped;
+    4. extract the prompt, write ``prompt.md`` (FR-006), hand off to the session for an
+       operator-edited ``response.md``;
+    5. **persist the confirmed response to disk before write-back** (FR-015), then
+       ``fill_reply`` — never submitting (FR-010);
+    6. on ``FillVerifyFailed``/``SelectorMiss`` during fill: keep ``response.md`` and tell
+       the operator to paste it manually (FR-012/FR-015).
+    """
+    # The context is intentionally NOT closed: the run ends with the drafted reply sitting
+    # unsubmitted in the live field, and the operator finishes in this same browser window —
+    # reviewing and submitting the post themselves (P-II/FR-010). main() is one-shot, so the
+    # OS reaps the browser when the operator closes it / the process exits.
+    _context, page = browser_factory()
+
+    _navigate_to_discussions(
+        adapter, page, config.target_classes[0],
+        ensure_logged_in=ensure_logged_in, announce=announce,
+    )
+    selected = select_soonest_due(adapter.list_discussions(page), today)
+    if selected is None:
+        raise NoUpcomingDiscussion("no discussion has an upcoming due date")
+
+    gate_prompt = (
+        f"Selected discussion: {selected.title!r} (due {selected.due_date}). "
+        "Proceed to draft a reply? [y/N] "
+    )
+    if config.confirm and not confirm(gate_prompt):
+        announce("Aborted before extraction: confirmation declined.")
+        return
+
+    adapter.open_discussion(page, selected)
+    prompt_text = adapter.extract_prompt(page)
+
+    run_dir = make_run_dir(config.run_root)
+    handoff.write_prompt(
+        run_dir,
+        prompt_text,
+        {"title": selected.title, "due": str(selected.due_date), "url": selected.url},
+    )
+    response = session(run_dir, config.editor_cmd)
+    # FR-015: the final response is on disk before any write-back is attempted.
+    (run_dir / handoff.RESPONSE_FILE).write_text(response, encoding="utf-8")
+
+    try:
+        adapter.fill_reply(page, response)
+    except (FillVerifyFailed, SelectorMiss) as exc:
+        announce(
+            f"Reply NOT inserted ({exc}). Your response is preserved at "
+            f"{run_dir / handoff.RESPONSE_FILE} — please paste it into the reply field "
+            "manually."
+        )
+        return
+
+    announce(
+        f"Reply drafted into the field for {selected.title!r} (due {selected.due_date}) — "
+        "review it and submit it yourself."
+    )
+
+
+def validate(
+    page,
+    *,
+    adapter,
+    confirm=_confirm_via_input,
+    fixtures_dir=Path("fixtures"),
+    class_id: str = "",
+    today: dt.date | None = None,
+    ensure_logged_in=browser.ensure_logged_in,
+    announce=print,
+) -> int:
+    """Guided live-check: drive each live step on ``page`` and gate it on a single-keypress
+    operator confirmation (FR-017). On a ``SelectorMiss`` the tool snapshots the live DOM to
+    ``fixtures_dir/<step>_live.html`` itself (FR-018), names ``portal_adapter.py`` as the
+    one-file fix, and stops — the operator never hand-captures markup. Nothing is submitted.
+
+    The first navigation pauses for MANUAL login and retries once if the portal redirects to
+    the SSO login (FR-003, Esc#2 — the pause is post-navigation, where the redirect is visible).
+
+    Returns 0 when every checkpoint is confirmed, 1 when a checkpoint is declined or nothing
+    is upcoming, 2 when login could not be completed, 3 on a selector miss (a snapshot was
+    written). The ``adapter``/``confirm``/``ensure_logged_in``/``announce`` seams are injected
+    so the flow logic is unit-testable with fakes; the live page-recognition residue is T026.
+    """
+    if today is None:
+        today = dt.date.today()
+    step = "navigate"
+    try:
+        _navigate_to_discussions(
+            adapter, page, class_id, ensure_logged_in=ensure_logged_in, announce=announce
+        )
+        step = "list"
+        selected = select_soonest_due(adapter.list_discussions(page), today)
+        if selected is None:
+            announce("Guided validation: no upcoming discussion to validate — nothing to check.")
+            return 1
+        if not confirm(f"Found {selected.title!r} due {selected.due_date} — correct? [y] "):
+            announce("Guided validation stopped: selection not confirmed.")
+            return 1
+        step = "extract"
+        adapter.open_discussion(page, selected)
+        prompt = adapter.extract_prompt(page)
+        if not confirm(f"Extracted the prompt ({len(prompt)} chars) — looks right? [y] "):
+            announce("Guided validation stopped: prompt not confirmed.")
+            return 1
+        step = "fill"
+        adapter.fill_reply(page, _VALIDATE_SAMPLE)
+        if not confirm("Filled the reply field — your text shows, nothing submitted? [y] "):
+            announce("Guided validation stopped: fill not confirmed.")
+            return 1
+    except NotAuthenticated as exc:
+        # The login pause + single retry ran and the operator still is not signed in: stop the
+        # walk (routed to the pause path, NOT a misleading selector-miss snapshot). Nothing
+        # was submitted.
+        announce(
+            f"Guided validation stopped: not signed in ({exc}). Log in in the browser "
+            "window, then re-run `discuss validate`."
+        )
+        return 2
+    except SelectorMiss as exc:
+        snapshot = Path(fixtures_dir) / f"{step}_live.html"
+        # FR-018: the tool must capture the live markup ITSELF — create the fixtures dir if
+        # it is absent (fresh checkout / CWD without fixtures/) so the snapshot never turns
+        # into a traceback instead of a capture.
+        snapshot.parent.mkdir(parents=True, exist_ok=True)
+        snapshot.write_text(page.content(), encoding="utf-8")
+        announce(
+            f"Selector miss at the {step!r} step: {exc}\n"
+            f"Saved the live page markup to {snapshot} for re-capture. Fix the selector in "
+            "src/discuss/portal_adapter.py — the one-file home for every portal selector."
+        )
+        return 3
+    announce("Guided validation complete — every checkpoint confirmed; nothing was submitted.")
+    return 0
+
+
+def _run_validate(config: Config) -> int:
+    """Wire the real live dependencies for ``discuss validate`` (FR-017): open the operator's
+    persistent context, then run the guided walk against the real adapter. The manual-login
+    pause is INSIDE the walk, after the first navigation (Esc#2) — there is no pre-navigation
+    auth check here. Fails loud (rc 2) with guidance when no class is configured, before any
+    browser is opened."""
+    if not config.target_classes:
+        print(_NO_CLASS_MESSAGE)
+        return 2
+    _context, page = browser.open_persistent_context(config.profile_dir)
+    return validate(
+        page,
+        adapter=portal_adapter,
+        class_id=config.target_classes[0],
+        today=dt.date.today(),
+    )
+
+
+def main(argv=None) -> int:
+    """Console entry: dispatch ``discuss validate`` to the guided check, else build the real
+    dependencies and delegate to ``run`` (FR-001)."""
+    args = sys.argv[1:] if argv is None else list(argv)
+    config = Config.load(_load_overrides())
+
+    if args and args[0] == "validate":
+        return _run_validate(config)
+
+    if not config.target_classes:
+        print(_NO_CLASS_MESSAGE)
+        return 2
+
+    def browser_factory():
+        return browser.open_persistent_context(config.profile_dir)
+
+    try:
+        run(
+            config=config,
+            browser_factory=browser_factory,
+            adapter=portal_adapter,
+            today=dt.date.today(),
+        )
+    except DiscussError as exc:
+        print(f"discuss: {exc}")
+        return 1
+    return 0

@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Discuss
+Comment=Draft this week's UOPX discussion post with assistance (fills the reply, never submits)
+Exec=/home/qqp/projects/discuss/launcher/launch.sh
+Terminal=false
+Categories=Education;
