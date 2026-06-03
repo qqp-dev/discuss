@@ -64,7 +64,7 @@ def _read(rel: str) -> str:
 (adoption-by-copy; no runtime link to portable-core). `review-verdict.md` is copied too so the
 schema cross-references resolve.
 
-- [ ] **T001 — RED → GREEN → REFACTOR**
+- [x] **T001 — RED → GREEN → REFACTOR**
   - RED: create `tests/test_contract_conformance.py` with the shared header above plus:
 
 ```python
@@ -514,3 +514,4 @@ per task is the resumable handoff state.
 | Gate | Anchor | Verdict | Key findings |
 |------|--------|---------|--------------|
 | G1 (design exit) | spec+plan+tasks+sign-off | clear (after 1 bounce) | testability BLOCK→PASS: FR-001/I3 was a multi-limb criterion whose I3-negative limb was unasserted; split into a structural non-subordination sentinel + a distinct `[no-oracle]`. completeness/scope/sign-off-faithfulness PASS. No-oracle residue (2: B1 prose-fidelity, I3-negative absence) routed to operator via sign-off § No-oracle Admissions. |
+| G2 (T001) | test_contract_schemas_vendored | n/a — skipped | `[no-review]` task; touches only exempt schema globs (`method/schemas/**`) + the conformance test module. No production code for a panel to judge. |
