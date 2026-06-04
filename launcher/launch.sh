@@ -1,30 +1,51 @@
 #!/usr/bin/env bash
-# Discuss launcher: open a terminal emulator running the `discuss` pipeline.
-#
-# The `discuss` console-script must be on PATH — install the project into a venv
-# (`pip install -e .[dev]`) and ensure that venv's bin is on PATH for your desktop
-# session (see README). This shim only finds a terminal and runs `discuss` in it; the
-# interactive Claude Code session and the human-paced portal steps happen inside.
+# Discuss launcher. Double-click or pin to taskbar — no terminal needed.
 set -euo pipefail
 
-CMD="discuss"
+LAUNCHER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(dirname "$LAUNCHER_DIR")"
+CONFIG_FILE="$PROJECT_DIR/.env"
+DISCUSS_BIN="$PROJECT_DIR/.venv/bin/discuss"
 
-# Prefer the Debian/Ubuntu alternatives wrapper, then common emulators. Each launches
-# the terminal with `discuss` as its program. If none is found we fail loud with the
-# documented fallback (run `discuss` directly).
-if command -v x-terminal-emulator >/dev/null 2>&1; then
-    exec x-terminal-emulator -e "$CMD"
-elif command -v gnome-terminal >/dev/null 2>&1; then
-    exec gnome-terminal -- bash -lc "$CMD"
-elif command -v konsole >/dev/null 2>&1; then
-    exec konsole -e "$CMD"
-elif command -v xfce4-terminal >/dev/null 2>&1; then
-    exec xfce4-terminal -e "$CMD"
-elif command -v xterm >/dev/null 2>&1; then
-    exec xterm -e "$CMD"
-else
-    echo "discuss: no supported terminal emulator found" >&2
-    echo "  (tried x-terminal-emulator, gnome-terminal, konsole, xfce4-terminal, xterm)" >&2
-    echo "  Fallback: open a terminal yourself and run: discuss" >&2
+# ── Preflight ─────────────────────────────────────────────────────────────────
+_die() {
+    local msg="$1"
+    if command -v zenity >/dev/null 2>&1; then
+        zenity --error --title="Discuss" --text="$msg" 2>/dev/null || true
+    elif command -v notify-send >/dev/null 2>&1; then
+        notify-send "Discuss — error" "$msg"
+    fi
+    echo "discuss: $msg" >&2
     exit 1
+}
+
+if [ ! -f "$DISCUSS_BIN" ]; then
+    _die "Setup hasn't been run yet.\n\nOpen a terminal and run:\n  $PROJECT_DIR/setup.sh"
+fi
+
+if [ ! -f "$CONFIG_FILE" ]; then
+    _die "No course ID configured.\n\nOpen a terminal and run:\n  $PROJECT_DIR/setup.sh"
+fi
+
+# ── Load config ───────────────────────────────────────────────────────────────
+# shellcheck source=/dev/null
+set -a; source "$CONFIG_FILE"; set +a
+
+# ── Build the command the terminal will run ───────────────────────────────────
+# Keep the window open after discuss exits so the user can read any output.
+INNER="$DISCUSS_BIN; echo ''; echo 'Done — close this window when ready.'; exec bash"
+
+# ── Launch in whatever terminal is available ──────────────────────────────────
+if command -v gnome-terminal >/dev/null 2>&1; then
+    exec gnome-terminal --title="Discuss" -- bash -c "$INNER"
+elif command -v x-terminal-emulator >/dev/null 2>&1; then
+    exec x-terminal-emulator -T "Discuss" -e bash -c "$INNER"
+elif command -v xfce4-terminal >/dev/null 2>&1; then
+    exec xfce4-terminal --title="Discuss" -e "bash -c '$INNER'"
+elif command -v konsole >/dev/null 2>&1; then
+    exec konsole --title "Discuss" -e bash -c "$INNER"
+elif command -v xterm >/dev/null 2>&1; then
+    exec xterm -T "Discuss" -e bash -c "$INNER"
+else
+    _die "No terminal emulator found.\n\nInstall gnome-terminal or xterm, then try again."
 fi

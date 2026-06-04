@@ -9,3 +9,4 @@ runs/
 scratch_*.py
 htmlcov/
 .coverage
+.env

@@ -27,17 +27,15 @@ It assists *your* post; it does not write posts for you to submit unread.
 
 ## Install
 
-From the project root, create a virtualenv and install (a bare `pip install` hits
-PEP-668 "externally-managed-environment" on Debian's system Python; a venv avoids that):
+Run the setup script once — it handles everything (Python environment, browser download,
+course ID, and desktop launcher):
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -e '.[dev]'
-python -m playwright install chromium    # one-time: download the browser binary
+bash setup.sh
 ```
 
-This puts a `discuss` console-script on your PATH (inside the venv).
+When it finishes, a **Discuss** icon appears in your applications menu (and Desktop if one
+exists). From then on, just click that icon to start a run.
 
 ## First-time login (one-time per machine)
 
@@ -76,22 +74,15 @@ GUI one (`DISCUSS_EDITOR='gnome-text-editor --standalone'`).
 
 ## Run it
 
-Either:
+**Double-click the Discuss icon** in your applications menu or Desktop shortcut.
 
-- **Launcher (double-click):** install the desktop entry so a double-click starts a run.
-  ```bash
-  # Edit launcher/discuss.desktop's Exec= path if you moved the project, then:
-  cp launcher/discuss.desktop ~/.local/share/applications/
-  update-desktop-database ~/.local/share/applications 2>/dev/null || true
-  ```
-  `launch.sh` opens a terminal emulator running `discuss`; the interactive session happens
-  inside it. The `discuss` script must be on the PATH of your desktop session (point the
-  launcher at the venv, or add the venv `bin` to your session PATH).
+To run from a terminal (e.g. to change your course ID):
 
-- **Terminal:** with the venv active, run with at least the target class set:
-  ```bash
-  DISCUSS_TARGET_CLASSES=_577963_1 DISCUSS_EDITOR=nano discuss
-  ```
+```bash
+bash setup.sh          # re-run setup to update the course ID
+# or run directly:
+.venv/bin/discuss
+```
 
 ### What a run looks like
 

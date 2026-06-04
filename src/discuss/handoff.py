@@ -12,6 +12,8 @@ import os
 import shutil
 import subprocess
 import tempfile
+from pathlib import Path
+from shutil import which
 from datetime import datetime
 from pathlib import Path
 
@@ -26,7 +28,9 @@ WORKFLOW_FILE = "CLAUDE.md"
 WORKFLOW_TEMPLATE = Path(__file__).resolve().parents[2] / "templates" / "workflow-CLAUDE.md"
 
 # The interactive session command. `claude` auto-reads CLAUDE.md from its cwd.
-SESSION_CMD = ["claude"]
+# Resolve to absolute path so subprocess can find it regardless of venv PATH stripping.
+_CLAUDE_BIN = which("claude") or str(Path.home() / ".local/bin/claude")
+SESSION_CMD = [_CLAUDE_BIN]
 # Env var the workflow uses to open the GUI editor (see templates/workflow-CLAUDE.md).
 EDITOR_ENV_VAR = "DISCUSS_EDITOR"
 
@@ -85,7 +89,14 @@ def _session_command(editor_cmd) -> tuple[list[str], dict]:
     can open the GUI editor with a blocking wait flag.
     """
     env = {**os.environ, EDITOR_ENV_VAR: " ".join(editor_cmd)}
-    return list(SESSION_CMD), env
+    kickoff = (
+        "Read prompt.md in this directory. "
+        "Then follow the steps in CLAUDE.md exactly: surface the key angles and tensions in the prompt, "
+        "ask me for my stance, main points, and any sources or evidence I want to use — "
+        "and wait for my answer before drafting anything."
+    )
+    cmd = list(SESSION_CMD) + ["--model", "claude-opus-4-8", "--effort", "xhigh", kickoff]
+    return cmd, env
 
 
 def run_session(run_dir, editor_cmd, template_path=WORKFLOW_TEMPLATE) -> str:

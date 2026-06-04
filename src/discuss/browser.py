@@ -60,4 +60,8 @@ def ensure_logged_in(page, wait=None):
             raise NotAuthenticated("operator aborted manual login (EOF)") from exc
         if answer.strip().lower() == "q":
             raise NotAuthenticated("operator gave up manual login")
+        try:
+            page.wait_for_load_state("networkidle", timeout=10_000)
+        except Exception:
+            pass
     return page
