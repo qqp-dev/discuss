@@ -22,8 +22,28 @@ def test_write_prompt_includes_meta(tmp_path):
     assert "Wk1" in text and "2026-06-08" in text
 
 
+def test_write_peer_posts_creates_candidate_file(tmp_path):
+    # Peer-response drafting gets visible classmates as a durable input file so the
+    # interactive session can evaluate and choose two without re-reading the portal.
+    rd = handoff.make_run_dir(tmp_path)
+    post = type("P", (), {"index": 1, "author": "Ada", "text": "Useful point."})()
+    p = handoff.write_peer_posts(rd, [post])
+    text = p.read_text()
+    assert p.name == "peer-posts.md"
+    assert "Candidate 1: Ada" in text
+    assert "Useful point." in text
+
+
+def test_write_peer_posts_handles_none_visible(tmp_path):
+    # Edge: if no classmate posts are visible, the handoff still creates the expected file
+    # with guidance for the drafting session instead of crashing or omitting the input.
+    rd = handoff.make_run_dir(tmp_path)
+    p = handoff.write_peer_posts(rd, [])
+    assert "No classmate posts were visible" in p.read_text()
+
+
 def test_read_response_returns_saved_text(tmp_path):
-    # FR-009: the saved response.md is the final response, returned stripped of edges.
+    # FR-009: the saved response.md is the final main response, returned stripped of edges.
     rd = handoff.make_run_dir(tmp_path)
     (rd / "response.md").write_text("My edited answer.\n")
     assert handoff.read_response(rd) == "My edited answer."
@@ -43,6 +63,25 @@ def test_read_response_missing_raises(tmp_path):
     rd = handoff.make_run_dir(tmp_path)
     with pytest.raises(EmptyResponse):
         handoff.read_response(rd)
+
+
+def test_read_peer_replies_returns_two_saved_texts(tmp_path):
+    # The run requires two peer-reply drafts as first-class outputs.
+    rd = handoff.make_run_dir(tmp_path)
+    (rd / "peer-reply-1.md").write_text("Reply one.\n")
+    (rd / "peer-reply-2.md").write_text("Reply two.\n")
+    assert handoff.read_peer_replies(rd) == ["Reply one.", "Reply two."]
+
+
+def test_read_peer_replies_missing_or_blank_raises(tmp_path):
+    # Edge: a missing or blank peer reply must fail loud just like a missing main response.
+    rd = handoff.make_run_dir(tmp_path)
+    (rd / "peer-reply-1.md").write_text("Reply one.\n")
+    with pytest.raises(EmptyResponse):
+        handoff.read_peer_replies(rd)
+    (rd / "peer-reply-2.md").write_text(" \n")
+    with pytest.raises(EmptyResponse):
+        handoff.read_peer_replies(rd)
 
 
 def test_run_dirs_unique(tmp_path):
@@ -79,11 +118,38 @@ def test_run_session_invokes_claude_in_run_dir(tmp_path, monkeypatch):
         return R()
 
     monkeypatch.setattr(subprocess, "run", fake_run)
-    out = handoff.run_session(rd, ["code", "--wait"])
+    out = handoff.run_session(rd, ["xed", "--wait"])
     assert calls["cwd"] == rd
-    assert calls["cmd"][0] == "claude"
-    assert calls["env"]["DISCUSS_EDITOR"] == "code --wait"
+    assert calls["cmd"][0].endswith("claude")
+    assert calls["env"]["DISCUSS_EDITOR"] == "xed --wait"
     assert out == "final text"
+
+
+def test_run_session_can_skip_main_response_for_peer_mode(tmp_path, monkeypatch):
+    # Peer-reply mode has no response.md contract; the caller validates peer-reply files.
+    rd = handoff.make_run_dir(tmp_path)
+    template = tmp_path / "peer.md"
+    template.write_text("# peer workflow\n")
+    calls = {}
+
+    def fake_run(cmd, cwd=None, env=None, **kw):
+        calls.update(cwd=cwd)
+
+        class R:
+            returncode = 0
+
+        return R()
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    out = handoff.run_session(
+        rd,
+        ["xed", "--wait"],
+        template_path=template,
+        require_response=False,
+    )
+    assert out == ""
+    assert calls["cwd"] == rd
+    assert (rd / handoff.WORKFLOW_FILE).read_text() == "# peer workflow\n"
 
 
 def test_run_session_nonzero_exit_raises(tmp_path, monkeypatch):

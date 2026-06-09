@@ -3,13 +3,14 @@
 Single-trigger, **assisted** discussion-post draft pipeline for the University of Phoenix
 (UOPX / Blackboard Ultra) student portal.
 
-One trigger does the whole loop: open your already-logged-in browser, find this week's
-soonest-due discussion, pull out the prompt, help you think through and draft a reply in a
-GUI editor, then drop that reply into the portal's reply field — and **stop there**. You
-review and submit the post yourself.
+One trigger opens your already-logged-in browser, finds this week's soonest-due
+discussion, then shows a small menu: draft/fill the **main post**, or draft the **two
+required classmate replies**. Main-post mode drops the edited response into the portal's
+reply field - and **stops there**. Peer-reply mode saves two edited drafts for you to paste
+manually under classmates' posts.
 
 > **What this tool will never do** (these are guarantees, see *Principles* below):
-> - **Never submits** a post. It fills the reply field and leaves it for you.
+> - **Never submits** a post. Main-post mode fills the reply field and leaves it for you.
 > - **Never stores or types your credentials.** You log in by hand; it reuses your session.
 > - **Never auto-generates** a reply without your input. The drafting session asks for your
 >   stance and evidence first.
@@ -63,14 +64,14 @@ target class):
 | Variable | Meaning | Default |
 |---|---|---|
 | `DISCUSS_TARGET_CLASSES` | **required** — comma-separated class id(s) to search. Find the id in the course URL: `.../ultra/courses/<class_id>/...` | (none — run aborts with guidance if unset) |
-| `DISCUSS_EDITOR` | the `--wait`-style GUI editor command for editing the draft (must block until you close it) | `code --wait` |
+| `DISCUSS_EDITOR` | the `--wait`-style GUI editor command for editing the draft (must block until you close it) | `xed --wait` |
 | `DISCUSS_PROFILE_DIR` | persistent browser profile dir (holds your session; no credentials) | `profile/` |
 | `DISCUSS_RUN_ROOT` | parent dir for per-run working dirs | `runs/` |
 | `DISCUSS_CONFIRM` | set to `0`/`false`/`no`/`off` to disable the pre-extraction confirmation gate | gate **on** |
+| `DISCUSS_MODE` | optional shortcut that skips the menu; use `main` or `peer` | (menu shown) |
 
-The editor must **block** until you save and close (the default `code --wait` is VS Code).
-If VS Code isn't installed, use a terminal editor that blocks (`DISCUSS_EDITOR=nano`) or a
-GUI one (`DISCUSS_EDITOR='gnome-text-editor --standalone'`).
+The editor must **block** until you save and close. The default `xed --wait` is the stock
+Linux Mint Cinnamon text editor.
 
 ## Run it
 
@@ -80,7 +81,7 @@ To run from a terminal (e.g. to change your course ID):
 
 ```bash
 bash setup.sh          # re-run setup to update the course ID
-# or run directly:
+# or run directly after setup:
 .venv/bin/discuss
 ```
 
@@ -90,16 +91,24 @@ bash setup.sh          # re-run setup to update the course ID
 2. Navigates to your class's discussions and selects the **soonest upcoming due** one
    (past-due and undated discussions are skipped). If nothing is upcoming, it stops and
    says so.
-3. Shows a **confirmation** naming the discussion and its due date. Decline and nothing is
-   extracted. (You can disable this gate in config; it defaults **on**.)
-4. Extracts the prompt to `runs/<run>/prompt.md` and starts a primed drafting session that
-   surfaces the prompt's angles, **asks you** for your stance / main points / evidence,
-   then drafts `response.md` grounded in your answers.
-5. Opens `response.md` in your editor and waits for you to save and close.
-6. Injects your final text into the reply field, **verifies the read-back**, and leaves the
-   browser open with the unsubmitted draft. **You review and submit.**
-   - If the field can't be found or the read-back doesn't match, it does **not** write to
-     the portal — your `response.md` is preserved and you're told to paste it manually.
+3. Shows a menu:
+   - `1) Main post`
+   - `2) Two classmate replies`
+4. Shows a **confirmation** naming the discussion, due date, and selected work mode.
+   Decline and nothing is extracted. (You can disable this gate in config; it defaults
+   **on**.)
+5. In **main post** mode, the tool extracts the prompt to `runs/<run>/prompt.md`, starts a
+   primed drafting session that **asks you** for your stance / main points / evidence,
+   opens `response.md` in `xed`, then injects the edited text into the reply field,
+   **verifies the read-back**, and leaves the browser open with the unsubmitted draft.
+   **You review and submit.**
+6. In **classmate replies** mode, the tool extracts the prompt plus visible classmate posts
+   to `prompt.md` and `peer-posts.md`, asks for the through-line from your main post,
+   chooses two usable classmates, opens `peer-reply-1.md` and `peer-reply-2.md` in `xed`,
+   then stops. You paste those replies manually into the selected classmate reply forms.
+
+If the main-post field can't be found or the read-back doesn't match, it does **not** write
+to the portal - your `response.md` is preserved and you're told to paste it manually.
 
 ---
 
@@ -132,8 +141,8 @@ checklist against the real portal — by design, CI never touches the login-gate
 - **Respectful guest (P-I).** Human pace, minimum page loads, no automated retry loops, no
   credential automation. We are a guest in someone else's system.
 - **Assists, never impersonates (P-II).** The tool helps *you* write *your* post and draws
-  out your own stance and evidence; it never fabricates a submission. It fills the reply but
-  the submit is always yours.
+  out your own stance and evidence; it never fabricates a submission. Main-post mode fills
+  the reply but the submit is always yours; peer mode only saves drafts for manual paste.
 - **One adapter for the portal (P-III / FR-013).** All portal selectors and live I/O are
   confined to `portal_adapter.py`; everything else is pure and testable.
 - **Fail loud (P-IV / FR-014).** Each failure condition raises a specific, named error and

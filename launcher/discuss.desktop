@@ -1,7 +1,7 @@
 [Desktop Entry]
 Type=Application
 Name=Discuss
-Comment=Draft this week's UOPX discussion post with assistance (fills the reply, never submits)
+Comment=Draft this week's UOPX post or peer replies (never submits)
 Exec=REPLACE_WITH_SETUP
 Terminal=false
 Categories=Education;

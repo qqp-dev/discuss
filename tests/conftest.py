@@ -15,9 +15,9 @@ import pathlib
 
 import pytest
 
-from discuss import handoff
+from discuss import cli, handoff
 from discuss.config import Config
-from discuss.portal_parse import Discussion
+from discuss.portal_parse import Discussion, PeerPost
 
 _FIXTURES = pathlib.Path(__file__).resolve().parent.parent / "fixtures"
 
@@ -89,6 +89,10 @@ class FakeAdapter:
         self.filled = False
         self.submitted = False
         self.response_existed_at_fill = False
+        self.peer_posts = [
+            PeerPost(index=1, author="Student A", text="A thoughtful classmate post."),
+            PeerPost(index=2, author="Student B", text="Another useful classmate post."),
+        ]
 
     def go_to_discussions(self, page, class_id):
         return page
@@ -102,6 +106,9 @@ class FakeAdapter:
     def extract_prompt(self, page):
         self.extracted = True
         return "Discuss the assigned prompt in your own words."
+
+    def extract_peer_posts(self, page):
+        return self.peer_posts
 
     def fill_reply(self, page, text):
         self.response_existed_at_fill = (self._run_dir / handoff.RESPONSE_FILE).exists()
@@ -118,6 +125,8 @@ class FakeCtx:
         self.run_dir.mkdir()
         self.today = dt.date(2026, 6, 1)
         self.confirm_answer = True
+        self.mode = cli.MODE_MAIN
+        self.mode_prompted = False
         self.gate_prompt = None
         self.last_message = None
         self.selected = Discussion(
@@ -147,14 +156,20 @@ class FakeCtx:
         self.gate_prompt = prompt
         return self.confirm_answer
 
+    def _choose_mode(self):
+        self.mode_prompted = True
+        return self.mode
+
     def _announce(self, message):
         self.last_message = message
 
     def _make_run_dir(self, run_root):
         return self.run_dir
 
-    def _session(self, run_dir, editor_cmd):
+    def _session(self, run_dir, editor_cmd, template_path=None, require_response=True):
         (run_dir / handoff.RESPONSE_FILE).write_text("My edited final answer.\n", encoding="utf-8")
+        (run_dir / handoff.PEER_REPLY_FILES[0]).write_text("Peer reply one.\n", encoding="utf-8")
+        (run_dir / handoff.PEER_REPLY_FILES[1]).write_text("Peer reply two.\n", encoding="utf-8")
         return "My edited final answer."
 
     @property
@@ -166,6 +181,7 @@ class FakeCtx:
             today=self.today,
             session=self._session,
             confirm=self._confirm,
+            choose_mode=self._choose_mode,
             announce=self._announce,
             ensure_logged_in=self._ensure_logged_in,
             make_run_dir=self._make_run_dir,

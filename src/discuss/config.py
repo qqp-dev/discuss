@@ -14,7 +14,7 @@ from dataclasses import dataclass, field, fields
 from pathlib import Path
 
 # Defaults live here once (no duplicated literals).
-DEFAULT_EDITOR_CMD: list[str] = ["code", "--wait"]
+DEFAULT_EDITOR_CMD: list[str] = ["xed", "--wait"]
 DEFAULT_PROFILE_DIR = Path("profile")  # persistent browser profile (gitignored)
 DEFAULT_RUN_ROOT = Path("runs")  # where per-run dirs are created (gitignored)
 
@@ -28,6 +28,7 @@ class Config:
     - `confirm`: the pre-extraction confirmation gate; defaults **on** (FR-005).
     - `editor_cmd`: the `--wait`-capable GUI editor command (FR-009).
     - `run_root`: parent directory for per-run working dirs.
+    - `mode`: optional non-interactive work-mode shortcut; absent means show the menu.
     """
 
     profile_dir: Path = DEFAULT_PROFILE_DIR
@@ -35,6 +36,7 @@ class Config:
     confirm: bool = True
     editor_cmd: list[str] = field(default_factory=lambda: list(DEFAULT_EDITOR_CMD))
     run_root: Path = DEFAULT_RUN_ROOT
+    mode: str | None = None
 
     @classmethod
     def load(cls, overrides: dict | None = None) -> "Config":

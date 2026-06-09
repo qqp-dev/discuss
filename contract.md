@@ -17,11 +17,15 @@ of `discuss` from this file alone, without reading the source or the archive.
 
 `discuss` is a **single-operator local tool**. On one trigger it drives the operator's
 already-logged-in University of Phoenix (UOPX / Blackboard Ultra) student-portal session,
-finds the discussion with the soonest upcoming due date, extracts its prompt, hands that
-prompt to an interactive Claude Code session that helps the operator reason through the
-topic and draft a reply in *their own* words, opens that draft in a GUI editor for final
-edits, and fills the result into the portal's reply form — **stopping before submit**. The
-operator reviews and posts.
+finds the discussion with the soonest upcoming due date, and presents a work-mode menu:
+draft/fill the main post, or draft the two required classmate replies. Main-post mode
+extracts the prompt, hands it to an interactive Claude Code session that helps the operator
+reason through the topic and draft a main reply in *their own* words, opens that draft in a
+GUI editor for final edits, and fills the main reply into the portal's reply form —
+**stopping before submit**. Peer-reply mode extracts the prompt plus visible classmate posts,
+uses an interactive Claude Code session to choose two usable classmates and draft two
+shorter replies tied to the operator's stated through-line, opens those drafts in a GUI
+editor, and stops so the operator can paste them manually.
 
 The *why* is the governing distinction: `discuss` **assists** the operator's own work; it
 does **not** ghostwrite-and-submit. It draws out the operator's stance and evidence, makes
@@ -37,7 +41,8 @@ pages the click-path requires.
 ```text
 trigger → persistent browser → navigate fixed click-path → wait-for-render →
 classify landing → (manual-login pause, post-nav) → select soonest-due →
-confirm gate → extract prompt → draft handoff → fill reply (no submit)
+mode menu → confirm gate → mode-specific extraction → draft handoff →
+main fill (no submit) OR peer drafts for manual paste
 ```
 
 - **Trigger.** A single operator action launches the run: a desktop launcher
@@ -60,32 +65,44 @@ confirm gate → extract prompt → draft handoff → fill reply (no submit)
   unparseable-due discussion is never selected; on a tie the tiebreak is earliest-due then
   listing order, surfaced in the confirmation gate. If nothing is upcoming, the run stops and
   reports rather than guessing. *(FR-004; §5 Safety invariants)*
+- **Mode menu.** The operator chooses whether this run is for the main post or the two
+  classmate replies. `DISCUSS_MODE=main|peer` may pin the mode for non-interactive launchers.
 - **Confirmation gate.** Before extracting, the tool presents a confirmation gate naming the
-  selected discussion and its due date. The gate is **on by default** and configurable off; if
-  the operator declines, the run aborts cleanly without extracting anything. *(FR-005)*
-- **Extract the prompt.** On confirm, the tool extracts the plaintext discussion prompt into
-  the run dir (`prompt.md`). *(FR-006)*
-- **Draft handoff** → §3. **Fill reply (no submit)** → §4.
+  selected discussion, its due date, and the selected work mode. The gate is **on by default**
+  and configurable off; if the operator declines, the run aborts cleanly without extracting
+  anything. *(FR-005)*
+- **Mode-specific extraction.** Main-post mode extracts the plaintext discussion prompt into
+  the run dir (`prompt.md`). Peer-reply mode extracts `prompt.md` plus visible classmate posts
+  into `peer-posts.md`. *(FR-006)*
+- **Draft handoff** → §3. **Main fill / peer manual paste** → §4.
 
 ## 3. Draft handoff
 
-The extracted prompt is handed to an **interactive Claude Code session**, primed via a
-workflow `CLAUDE.md` (rendered into the run dir from `templates/workflow-CLAUDE.md`) with the
-reason-with-operator → draft → edit workflow. *(FR-007)*
+The extracted prompt and, in peer mode, visible classmate posts are handed to an
+**interactive Claude Code session**, primed via a workflow `CLAUDE.md` rendered into the run
+dir from the selected template (`templates/workflow-CLAUDE.md` for the main post or
+`templates/peer-replies-CLAUDE.md` for classmate replies).
+*(FR-007)*
 
-The primed session **surfaces the prompt's key angles and tensions**, draws out the operator's
-stance, points, and any reading/evidence, and **grounds the draft in that input** before
-opening the editor. It MUST NOT silently auto-generate a response without operator input —
-the human reasons; the tool assists. *(FR-008)*
+The main-post workflow **surfaces the prompt's key angles and tensions**, draws out the
+operator's stance, points, and any reading/evidence, and **grounds the main draft in that
+input**. The peer-reply workflow reads the prompt and visible classmate posts, draws out the
+operator's main-post through-line or desired themes, picks the best two classmate candidates
+for specific, constructive responses, and drafts two shorter replies connected to those
+themes. Neither workflow may silently auto-generate a response without operator input — the
+human reasons; the tool assists. *(FR-008)*
 
-The session then **opens the draft in a GUI editor** (a `--wait`-capable command; default
-`code --wait`, configurable) and **blocks until the operator saves and closes**. The saved
-file is the final response. The editor step is mandatory and never skipped. *(FR-009)*
+The session then **opens only the selected mode's drafts in a GUI editor** (a
+`--wait`-capable command; default `xed --wait`, the stock Linux Mint Cinnamon editor,
+configurable) and **blocks until the operator saves and closes**. The saved files are the
+final drafts. The editor step is mandatory and never skipped. *(FR-009)*
 
 ## 4. Reply fill (no submit)
 
-Given the final response and the target discussion page still open, the tool fills the reply
-form and stops short of posting.
+In main-post mode, given the final main-post response and the target discussion page still
+open, the tool fills the top-level reply form and stops short of posting. In peer-reply mode,
+the tool verifies the two peer-reply files exist and stops without writing to the portal; the
+operator pastes them into the selected classmate reply forms.
 
 - **Runtime field-type detection.** The tool detects whether the reply field is a plain
   textarea or a rich-text / contenteditable editor **at runtime** and handles both; the type
@@ -104,13 +121,14 @@ form and stops short of posting.
 These are governance-level guarantees (constitution §6, P-I..P-IV). A run that would violate
 one stops instead.
 
-- **No submit (P-II).** The tool fills the reply form and stops; it never auto-submits. The
-  operator always performs the final post. *(FR-010)*
+- **No submit (P-II).** Main-post mode fills the reply form and stops; peer-reply mode only
+  saves drafts for manual paste. The tool never auto-submits, and the operator always
+  performs the final post. *(FR-010)*
 - **No credentials persisted (P-I).** The tool reuses the operator's live, human-authenticated
   session; it writes **no** portal credential to disk and touches only the persistent profile
   directory for session state. *(FR-002)*
-- **Persist the response before fill (FR-015).** The final response is always written to the
-  run dir before any write-back is attempted, so it is never lost if a downstream step fails.
+- **Persist the response before fill (FR-015).** The final main response is always written to
+  the run dir before any write-back is attempted, so it is never lost if a downstream step fails.
 - **Human pace, no retry-storm (P-I).** A run acts at human pace and touches the minimum number
   of pages required by the fixed click-path. On any failure (logged out, nothing due, selector
   miss, empty draft, read-back mismatch) the tool **stops and reports the specific failing
@@ -164,13 +182,17 @@ rendered DOM rather than an un-rendered SPA shell. *(FR-018)*
   (`src/discuss/config.py`), which merges overrides over documented defaults and ignores
   unknown keys so a stale entry never crashes a run: `profile_dir` (persistent profile,
   default `./profile/`), `target_classes` (the class identifier(s) to search), `confirm` (the
-  confirmation gate, default **on**), `editor_cmd` (the `--wait`-capable editor, default `code
-  --wait`), and `run_root` (parent of the per-run dirs, default `./runs/`).
+  confirmation gate, default **on**), `editor_cmd` (the `--wait`-capable editor, default `xed
+  --wait`), `run_root` (parent of the per-run dirs, default `./runs/`), and optional `mode`
+  (`main` or `peer`, absent means show the menu).
 - **Run dir.** Each invocation owns a per-run directory holding the extracted `prompt.md`, the
-  rendered workflow `CLAUDE.md`, and `response.md` (the final text), plus the selected
-  discussion's title, due date, and URL.
-- **Durable handoff.** The final response is persisted to the run dir before write-back and
-  preserved there on any downstream failure (§5), so the operator's work is never lost.
+  rendered workflow `CLAUDE.md`, and the selected discussion's title, due date, and URL. Main
+  mode adds `response.md` (the final main post text). Peer mode adds `peer-posts.md` plus
+  `peer-reply-1.md` / `peer-reply-2.md` (the two final peer-reply drafts).
+- **Durable handoff.** The final main response is persisted to the run dir before main-mode
+  write-back, and peer-reply drafts are verified on disk before peer mode reports ready. All
+  drafts are preserved there on any downstream failure (§5), so the operator's work is never
+  lost.
 
 ## 9. Adapters
 
@@ -179,9 +201,9 @@ These are the *how* bindings; the *what* is everything above.
 - **Playwright persistent profile** — the tool-owned browser driving the live portal under a
   persistent profile that reuses the operator's session (`src/discuss/browser.py`).
 - **Claude Code cwd-`CLAUDE.md` priming** — the draft handoff runs an interactive Claude Code
-  session primed by a workflow `CLAUDE.md` rendered into the run dir from
-  `templates/workflow-CLAUDE.md`.
-- **GUI editor** — a `--wait`-capable editor command (default `code --wait`, configurable) that
+  session primed by a workflow `CLAUDE.md` rendered into the run dir from the selected
+  template (`templates/workflow-CLAUDE.md` or `templates/peer-replies-CLAUDE.md`).
+- **GUI editor** — a `--wait`-capable editor command (default `xed --wait`, configurable) that
   blocks until the operator saves and closes.
 - **Desktop launcher** — `launcher/discuss.desktop` + `launcher/launch.sh` provide the
   single-click trigger; the `discuss` console-script is the equivalent CLI entry.

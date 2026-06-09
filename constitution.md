@@ -8,10 +8,12 @@ This constitution declares project policy. Discipline-gate skills read it; the p
 
 `discuss` is a single-operator local tool: on one trigger it drives a logged-in
 UOPX student-portal session (Playwright, persistent profile) to the discussion with
-the soonest upcoming due date, extracts the plaintext prompt, hands it to an
-interactive Claude Code session that helps the operator reason through the topic and
-draft a response, opens that draft in a GUI editor for final edits, and fills the
-result into the reply form — **without submitting it**. The operator reviews and posts.
+the soonest upcoming due date, asks whether the operator wants to work on the main post or
+the two required classmate replies, and runs that focused workflow. Main-post mode extracts
+the prompt, helps the operator reason through and edit a main response, then fills it into
+the reply form — **without submitting it**. Peer-reply mode extracts visible classmate posts,
+helps choose two classmates and edit two replies, and stops for manual paste. The operator
+reviews and posts.
 
 ---
 

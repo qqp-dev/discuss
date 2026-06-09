@@ -38,5 +38,6 @@ def test_fill_against_captured_reply_form():
         portal_adapter.fill_reply(page, "My drafted reply.")        # real adapter, real DOM
         field = page.query_selector(portal_adapter.REPLY_FIELD_SEL)
         assert "My drafted reply." in field.inner_text()            # rendered effect
+        assert field.evaluate("el => document.activeElement === el || el.contains(document.activeElement)")
         assert page.url == start_url                                # nothing navigated/submitted
         b.close()

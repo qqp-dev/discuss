@@ -73,6 +73,13 @@ PROMPT_CONTAINER_SEL = "#bb-editor-textbox"
 # FR-011 — do NOT hard-code the type.
 REPLY_FIELD_SEL = ".ql-editor[contenteditable='true']"
 
+# Classmate top-level posts shown in the opened discussion. These are read-only comment
+# messages under ``div.comment-wrapper``; keeping the scope there excludes the instructor
+# prompt/topic message and the new top-level reply editor.
+PEER_POST_SEL = "div.comment-wrapper bb-message[message-mode='view']"
+PEER_POST_AUTHOR_SEL = "bb-linked-username[analytics-id='discussion.message.user']"
+PEER_POST_BODY_SEL = ".ql-editor[contenteditable='false']"
+
 # The single dict view the live adapter uses; assembled from the constants above so each
 # selector is authored exactly once (FR-013 / SC-002).
 SELECTORS = {
@@ -82,6 +89,9 @@ SELECTORS = {
     "discussion_link": DISCUSSION_LINK_SEL,
     "prompt_container": PROMPT_CONTAINER_SEL,
     "reply_field": REPLY_FIELD_SEL,
+    "peer_post": PEER_POST_SEL,
+    "peer_post_author": PEER_POST_AUTHOR_SEL,
+    "peer_post_body": PEER_POST_BODY_SEL,
 }
 
 # Due-date strptime pattern for the text remaining AFTER the caller strips the "Due date: "
@@ -124,6 +134,51 @@ LANDING_WAIT_MS = 20_000
 # in the captured list shares (…/courses/<id>/engagement). The exact landing URL is a live
 # detail verified in T013.
 DISCUSSIONS_URL_TEMPLATE = "https://vle.phoenix.edu/ultra/courses/{class_id}/engagement"
+
+
+def _visible_field(page, selector: str):
+    """Return a visible field handle or raise ``SelectorMiss`` with the selector named."""
+    from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
+
+    try:
+        field = page.wait_for_selector(selector, state="visible", timeout=LANDING_WAIT_MS)
+    except PlaywrightTimeoutError as exc:
+        raise SelectorMiss(f"reply field not visible (selector {selector!r})") from exc
+    if field is None:
+        raise SelectorMiss(f"reply field not found (selector {selector!r})")
+    return field
+
+
+def _prepare_contenteditable(field) -> bool:
+    """Focus the contenteditable and select all current rendered content."""
+    return bool(
+        field.evaluate(
+            """el => {
+                el.scrollIntoView({block: "center", inline: "nearest"});
+                el.focus();
+                const selection = window.getSelection();
+                const range = document.createRange();
+                range.selectNodeContents(el);
+                selection.removeAllRanges();
+                selection.addRange(range);
+                return document.activeElement === el || el.contains(document.activeElement);
+            }"""
+        )
+    )
+
+
+def _dispatch_editor_input(field, text: str) -> None:
+    field.evaluate(
+        """(el, value) => {
+            const eventInit = {bubbles: true, cancelable: true, data: value, inputType: "insertText"};
+            const inputEvent = typeof InputEvent === "function"
+                ? new InputEvent("input", eventInit)
+                : new Event("input", {bubbles: true, cancelable: true});
+            el.dispatchEvent(inputEvent);
+            el.dispatchEvent(new Event("change", {bubbles: true, cancelable: true}));
+        }""",
+        text,
+    )
 
 
 # ---------------------------------------------------------------------------------------
@@ -218,6 +273,13 @@ def extract_prompt(page) -> str:
     return text
 
 
+def extract_peer_posts(page):
+    """Return visible classmate posts from the opened discussion page."""
+    from discuss.portal_parse import extract_peer_posts as parse_peer_posts
+
+    return parse_peer_posts(page.content())
+
+
 def fill_reply(page, text: str) -> None:
     """Inject ``text`` into the reply field and verify the read-back — never submit (T015).
 
@@ -238,21 +300,23 @@ def fill_reply(page, text: str) -> None:
     """
     from discuss.portal_parse import verify_fill_readback
 
-    field = page.query_selector(REPLY_FIELD_SEL)
-    if field is None:
-        raise SelectorMiss(f"reply field not found (selector {REPLY_FIELD_SEL!r})")
+    field = _visible_field(page, REPLY_FIELD_SEL)
 
     tag = (field.evaluate("el => el.tagName") or "").lower()
     is_contenteditable = bool(field.evaluate("el => el.isContentEditable"))
 
     if tag in ("textarea", "input"):
+        field.scroll_into_view_if_needed()
         field.fill(text)  # fill() replaces existing content
         actual = field.input_value()
     elif is_contenteditable:
+        field.scroll_into_view_if_needed()
         field.click()  # focus the editable body
-        page.keyboard.press("Control+A")  # clear any existing content before typing
-        page.keyboard.press("Delete")
+        if not _prepare_contenteditable(field):
+            raise FillVerifyFailed("reply field could not be focused; aborting write-back")
+        page.keyboard.press("Backspace")
         page.keyboard.insert_text(text)
+        _dispatch_editor_input(field, text)
         actual = field.inner_text()
     else:
         # Located, but neither a textarea nor contenteditable — we cannot type into it

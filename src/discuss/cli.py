@@ -1,12 +1,13 @@
 """`discuss` console-script entry point + the orchestrator pipeline (T017).
 
 ``run()`` wires the pieces into the one-click flow (FR-001): open the persistent context →
-pause for manual login if needed → navigate to the soonest-due discussion → confirm with
-the operator → extract the prompt → hand off to a primed session for an operator-edited
-draft → inject that draft into the reply field WITHOUT submitting. The adapter, the
-session, and the login/confirm/announce seams are all injected so the whole pipeline is
-testable with fakes (tests/test_cli_pipeline.py); ``main()`` supplies the real
-implementations and is verified end-to-end live in T019.
+pause for manual login if needed → navigate to the soonest-due discussion → let the
+operator choose the work mode → confirm → run the mode-specific drafting handoff. Main-post
+mode fills the top-level reply field WITHOUT submitting; peer-reply mode only saves the two
+classmate replies for manual paste. The adapter, session, menu, and login/confirm/announce
+seams are all injected so the whole pipeline is testable with fakes
+(tests/test_cli_pipeline.py); ``main()`` supplies the real implementations and is verified
+end-to-end live in T019.
 """
 
 from __future__ import annotations
@@ -28,6 +29,30 @@ from discuss.errors import (
 from discuss.portal_parse import select_soonest_due
 
 _FALSEY = {"0", "false", "no", "off"}
+MODE_MAIN = "main"
+MODE_PEER = "peer"
+_MODE_LABELS = {
+    MODE_MAIN: "main post",
+    MODE_PEER: "two classmate replies",
+}
+_MODE_ALIASES = {
+    "1": MODE_MAIN,
+    "m": MODE_MAIN,
+    "main": MODE_MAIN,
+    "post": MODE_MAIN,
+    "main-post": MODE_MAIN,
+    "main_post": MODE_MAIN,
+    "2": MODE_PEER,
+    "p": MODE_PEER,
+    "peer": MODE_PEER,
+    "peers": MODE_PEER,
+    "reply": MODE_PEER,
+    "replies": MODE_PEER,
+    "peer-replies": MODE_PEER,
+    "peer_replies": MODE_PEER,
+    "classmate": MODE_PEER,
+    "classmates": MODE_PEER,
+}
 
 # Operator guidance when no target class is configured — shared by the pipeline and the
 # `validate` subcommand so the one fail-loud message lives in a single place.
@@ -47,6 +72,24 @@ def _confirm_via_input(prompt: str) -> bool:
     return input(prompt).strip().lower() in ("y", "yes")
 
 
+def _normalize_mode(value: str) -> str | None:
+    """Return the canonical work mode for a menu/env value, or ``None`` if unknown."""
+    return _MODE_ALIASES.get(value.strip().lower())
+
+
+def _choose_mode_via_input() -> str:
+    """Default operator menu for picking the kind of discussion work to do."""
+    print("What do you want to work on?")
+    print("  1) Main post")
+    print("  2) Two classmate replies")
+    while True:
+        choice = input("Select 1 or 2 [1]: ").strip() or "1"
+        mode = _normalize_mode(choice)
+        if mode is not None:
+            return mode
+        print("Please choose 1 for the main post or 2 for the classmate replies.")
+
+
 def _load_overrides(env=os.environ) -> dict:
     """Gather config overrides from the environment (config.py delegates this to cli).
 
@@ -56,6 +99,7 @@ def _load_overrides(env=os.environ) -> dict:
       DISCUSS_PROFILE_DIR     persistent browser profile dir
       DISCUSS_RUN_ROOT        parent dir for per-run working dirs
       DISCUSS_CONFIRM         set to a falsey value (0/false/no/off) to disable the gate
+      DISCUSS_MODE            optional shortcut: main or peer (skips the menu)
     """
     overrides: dict = {}
     classes = env.get("DISCUSS_TARGET_CLASSES", "").strip()
@@ -73,7 +117,25 @@ def _load_overrides(env=os.environ) -> dict:
     confirm = env.get("DISCUSS_CONFIRM", "").strip()
     if confirm:
         overrides["confirm"] = confirm.lower() not in _FALSEY
+    mode = env.get("DISCUSS_MODE", "").strip()
+    if mode:
+        overrides["mode"] = mode
     return overrides
+
+
+def _resolve_mode(config: Config, choose_mode) -> str:
+    """Resolve the requested work mode from config or the interactive menu."""
+    if config.mode:
+        mode = _normalize_mode(config.mode)
+        if mode is None:
+            raise DiscussError(
+                f"invalid DISCUSS_MODE {config.mode!r}; use 'main' or 'peer'"
+            )
+        return mode
+    mode = choose_mode()
+    if mode not in _MODE_LABELS:
+        raise DiscussError(f"invalid work mode {mode!r}; use 'main' or 'peer'")
+    return mode
 
 
 def _navigate_to_discussions(adapter, page, class_id, *, ensure_logged_in, announce) -> None:
@@ -110,28 +172,30 @@ def run(
     ensure_logged_in=browser.ensure_logged_in,
     make_run_dir=handoff.make_run_dir,
     confirm=_confirm_via_input,
+    choose_mode=_choose_mode_via_input,
     announce=print,
 ) -> None:
-    """Run the full pipeline once. Ordering and safety guarantees, top to bottom:
+    """Run the selected drafting pipeline once. Ordering and safety guarantees:
 
     1. open the context and navigate — auth is checked AFTER navigation (Esc#2): a login
        redirect pauses for manual login and retries once; a persistent ``NotAuthenticated``
        surfaces and the run cannot proceed;
     2. list + ``select_soonest_due`` — ``None`` → ``NoUpcomingDiscussion`` (stop, extract
        nothing) (FR-014);
-    3. **confirmation gate** naming the discussion + due date — declining aborts before any
-       extraction (FR-005); a gate disabled in config is skipped;
-    4. extract the prompt, write ``prompt.md`` (FR-006), hand off to the session for an
-       operator-edited ``response.md``;
-    5. **persist the confirmed response to disk before write-back** (FR-015), then
-       ``fill_reply`` — never submitting (FR-010);
-    6. on ``FillVerifyFailed``/``SelectorMiss`` during fill: keep ``response.md`` and tell
-       the operator to paste it manually (FR-012/FR-015).
+    3. show/resolve the work-mode menu (main post vs two classmate replies);
+    4. **confirmation gate** naming the discussion + due date + work mode — declining aborts
+       before any extraction (FR-005); a gate disabled in config is skipped;
+    5. main-post mode extracts ``prompt.md``, runs the main workflow, persists
+       ``response.md``, then ``fill_reply`` — never submitting (FR-010);
+    6. peer-reply mode extracts ``prompt.md`` + ``peer-posts.md``, runs the peer workflow,
+       verifies the two peer-reply files, and stops without writing to the portal;
+    7. on ``FillVerifyFailed``/``SelectorMiss`` during main fill: keep ``response.md`` and
+       tell the operator to paste it manually (FR-012/FR-015).
     """
-    # The context is intentionally NOT closed: the run ends with the drafted reply sitting
-    # unsubmitted in the live field, and the operator finishes in this same browser window —
-    # reviewing and submitting the post themselves (P-II/FR-010). main() is one-shot, so the
-    # OS reaps the browser when the operator closes it / the process exits.
+    # The context is intentionally NOT closed: main mode leaves the drafted reply sitting
+    # unsubmitted in the live field, and peer mode leaves the operator in the same discussion
+    # page for manual paste. main() is one-shot, so the OS reaps the browser when the
+    # operator closes it / the process exits.
     _context, page = browser_factory()
 
     _navigate_to_discussions(
@@ -142,9 +206,10 @@ def run(
     if selected is None:
         raise NoUpcomingDiscussion("no discussion has an upcoming due date")
 
+    mode = _resolve_mode(config, choose_mode)
     gate_prompt = (
         f"Selected discussion: {selected.title!r} (due {selected.due_date}). "
-        "Proceed to draft a reply? [y/N] "
+        f"Work mode: {_MODE_LABELS[mode]}. Proceed? [y/N] "
     )
     if config.confirm and not confirm(gate_prompt):
         announce("Aborted before extraction: confirmation declined.")
@@ -152,15 +217,37 @@ def run(
 
     adapter.open_discussion(page, selected)
     prompt_text = adapter.extract_prompt(page)
-
     run_dir = make_run_dir(config.run_root)
     handoff.write_prompt(
         run_dir,
         prompt_text,
         {"title": selected.title, "due": str(selected.due_date), "url": selected.url},
     )
-    response = session(run_dir, config.editor_cmd)
-    # FR-015: the final response is on disk before any write-back is attempted.
+
+    if mode == MODE_PEER:
+        peer_posts = adapter.extract_peer_posts(page)
+        handoff.write_peer_posts(run_dir, peer_posts)
+        session(
+            run_dir,
+            config.editor_cmd,
+            template_path=handoff.PEER_REPLIES_WORKFLOW_TEMPLATE,
+            require_response=False,
+        )
+        peer_replies = handoff.read_peer_replies(run_dir)
+        announce(
+            f"Peer reply drafts ready for {selected.title!r} (due {selected.due_date}). "
+            f"Paste them manually from {run_dir / handoff.PEER_REPLY_FILES[0]} and "
+            f"{run_dir / handoff.PEER_REPLY_FILES[1]} ({len(peer_replies)} ready)."
+        )
+        return
+
+    response = session(
+        run_dir,
+        config.editor_cmd,
+        template_path=handoff.WORKFLOW_TEMPLATE,
+        require_response=True,
+    )
+    # FR-015: the final main response is on disk before any write-back is attempted.
     (run_dir / handoff.RESPONSE_FILE).write_text(response, encoding="utf-8")
 
     try:
@@ -168,8 +255,7 @@ def run(
     except (FillVerifyFailed, SelectorMiss) as exc:
         announce(
             f"Reply NOT inserted ({exc}). Your response is preserved at "
-            f"{run_dir / handoff.RESPONSE_FILE} — please paste it into the reply field "
-            "manually."
+            f"{run_dir / handoff.RESPONSE_FILE} — please paste manually."
         )
         return
 

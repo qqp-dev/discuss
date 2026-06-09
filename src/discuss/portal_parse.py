@@ -25,6 +25,9 @@ from discuss.portal_adapter import (
     LOGIN_PAGE_MARKER,
     LOGIN_SHELL_BODY_MARKER,
     LOGIN_SHELL_TITLE_MARKER,
+    PEER_POST_AUTHOR_SEL,
+    PEER_POST_BODY_SEL,
+    PEER_POST_SEL,
     PROMPT_CONTAINER_SEL,
 )
 
@@ -84,6 +87,15 @@ class Discussion:
     title: str
     due_date: dt.date | None
     url: str
+
+
+@dataclass(frozen=True)
+class PeerPost:
+    """One visible classmate post: stable ordinal, display author, and plaintext body."""
+
+    index: int
+    author: str
+    text: str
 
 
 def _parse_due_date(cell_text: str, date_format: str) -> dt.date | None:
@@ -161,6 +173,35 @@ def extract_prompt_text(html: str, *, container_selector: str = PROMPT_CONTAINER
     if node is None:
         return ""
     return collapse_whitespace(node.text(separator=" "))
+
+
+def extract_peer_posts(
+    html: str,
+    *,
+    message_selector: str = PEER_POST_SEL,
+    author_selector: str = PEER_POST_AUTHOR_SEL,
+    body_selector: str = PEER_POST_BODY_SEL,
+) -> list[PeerPost]:
+    """Return visible classmate posts as plaintext, excluding the topic prompt/new editor.
+
+    Pure over the captured discussion HTML. The live portal marks the instructor prompt as an
+    ``is-topic`` message outside ``div.comment-wrapper`` and classmate responses as comment
+    wrappers; the default selector follows that distinction so prompt text and the operator's
+    new-post editor never become peer candidates.
+    """
+    tree = HTMLParser(html or "")
+    posts: list[PeerPost] = []
+    for message in tree.css(message_selector):
+        body = message.css_first(body_selector)
+        text = collapse_whitespace(body.text(separator=" ")) if body is not None else ""
+        if not text:
+            continue
+        author = ""
+        author_node = message.css_first(author_selector)
+        if author_node is not None:
+            author = collapse_whitespace(author_node.text(separator=" "))
+        posts.append(PeerPost(index=len(posts) + 1, author=author or "Classmate", text=text))
+    return posts
 
 
 def is_login_page(url: str, html: str) -> bool:

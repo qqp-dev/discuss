@@ -10,7 +10,14 @@ import datetime as dt
 import pytest
 
 from discuss import cli, handoff
-from discuss.errors import FillVerifyFailed, NoUpcomingDiscussion, NotAuthenticated, SelectorMiss
+from discuss.errors import (
+    DiscussError,
+    EmptyResponse,
+    FillVerifyFailed,
+    NoUpcomingDiscussion,
+    NotAuthenticated,
+    SelectorMiss,
+)
 
 
 def test_confirm_decline_aborts(fake_ctx):
@@ -26,11 +33,18 @@ def test_confirm_gate_names_discussion(fake_ctx):
     cli.run(**fake_ctx.kwargs)
     assert fake_ctx.selected.title in fake_ctx.gate_prompt
     assert str(fake_ctx.selected.due_date) in fake_ctx.gate_prompt
+    assert "main post" in fake_ctx.gate_prompt
+
+
+def test_mode_menu_is_used_when_no_mode_configured(fake_ctx):
+    # The operator sees an explicit work-mode menu unless DISCUSS_MODE pins the mode.
+    cli.run(**fake_ctx.kwargs)
+    assert fake_ctx.mode_prompted is True
 
 
 def test_confirm_disabled_skips_gate(fake_ctx):
     # WHERE the operator disabled it (config.confirm=False), no gate is shown and the run
-    # proceeds straight through to a fill.
+    # proceeds straight through to the selected mode.
     fake_ctx.config.confirm = False
     cli.run(**fake_ctx.kwargs)
     assert fake_ctx.gate_prompt is None  # confirm() never called
@@ -63,6 +77,54 @@ def test_extracted_prompt_written(fake_ctx):
     # FR-006: confirmed run writes prompt.md before the session.
     cli.run(**fake_ctx.kwargs)
     assert (fake_ctx.run_dir / handoff.PROMPT_FILE).exists()
+
+
+def test_peer_posts_written(fake_ctx):
+    # Peer-response drafting carries visible classmate posts into the session as a durable
+    # input file, so choosing two replies is based on the opened discussion page.
+    fake_ctx.mode = cli.MODE_PEER
+    cli.run(**fake_ctx.kwargs)
+    text = (fake_ctx.run_dir / handoff.PEER_POSTS_FILE).read_text()
+    assert "Student A" in text
+    assert "A thoughtful classmate post." in text
+
+
+def test_main_post_mode_does_not_require_peer_replies(fake_ctx):
+    # Main-post work is now a focused mode: response.md is sufficient and peer-reply files
+    # are not required before filling the top-level reply field.
+    def session_without_peer_replies(run_dir, editor_cmd, template_path=None, require_response=True):
+        (run_dir / handoff.RESPONSE_FILE).write_text("My edited final answer.\n", encoding="utf-8")
+        return "My edited final answer."
+
+    kwargs = fake_ctx.kwargs
+    kwargs["session"] = session_without_peer_replies
+    cli.run(**kwargs)
+    assert fake_ctx.adapter.filled is True
+
+
+def test_missing_peer_reply_aborts_peer_mode(fake_ctx):
+    # In peer mode, the two peer replies are required outputs; if the session omits them,
+    # stop loud and never fill the top-level reply field.
+    fake_ctx.mode = cli.MODE_PEER
+
+    def session_without_peer_replies(run_dir, editor_cmd, template_path=None, require_response=True):
+        return ""
+
+    kwargs = fake_ctx.kwargs
+    kwargs["session"] = session_without_peer_replies
+    with pytest.raises(EmptyResponse):
+        cli.run(**kwargs)
+    assert fake_ctx.adapter.filled is False
+
+
+def test_peer_mode_drafts_replies_without_fill(fake_ctx):
+    # Peer-reply mode creates the two required reply drafts and never writes into the portal.
+    fake_ctx.mode = cli.MODE_PEER
+    cli.run(**fake_ctx.kwargs)
+    assert fake_ctx.adapter.filled is False
+    assert (fake_ctx.run_dir / handoff.PEER_REPLY_FILES[0]).exists()
+    assert (fake_ctx.run_dir / handoff.PEER_REPLY_FILES[1]).exists()
+    assert "paste" in fake_ctx.last_message.lower()
 
 
 def test_response_persisted_before_fill(fake_ctx):
@@ -112,23 +174,44 @@ def test_load_overrides_parses_env():
 
     env = {
         "DISCUSS_TARGET_CLASSES": " _577963_1 , _x_2 ",
-        "DISCUSS_EDITOR": "nano",
+        "DISCUSS_EDITOR": "xed --wait",
         "DISCUSS_CONFIRM": "false",
         "DISCUSS_PROFILE_DIR": "/tmp/p",
         "DISCUSS_RUN_ROOT": "/tmp/r",
+        "DISCUSS_MODE": "peer",
     }
     ov = cli._load_overrides(env)
     assert ov["target_classes"] == ["_577963_1", "_x_2"]
-    assert ov["editor_cmd"] == ["nano"]
+    assert ov["editor_cmd"] == ["xed", "--wait"]
     assert ov["confirm"] is False
     assert ov["profile_dir"] == Path("/tmp/p")
     assert ov["run_root"] == Path("/tmp/r")
+    assert ov["mode"] == "peer"
     assert cli._load_overrides({}) == {}  # nothing set → no overrides, all defaults win
 
 
 def test_confirm_truthy_env_enables_gate():
     # DISCUSS_CONFIRM with a non-falsey value keeps the gate ON.
     assert cli._load_overrides({"DISCUSS_CONFIRM": "1"})["confirm"] is True
+
+
+def test_discuss_mode_config_skips_menu(fake_ctx):
+    # DISCUSS_MODE/main config pins the mode and avoids the interactive menu.
+    fake_ctx.config.mode = "peer"
+    cli.run(**fake_ctx.kwargs)
+    assert fake_ctx.mode_prompted is False
+    assert fake_ctx.adapter.filled is False
+
+
+def test_invalid_discuss_mode_fails_loud(fake_ctx):
+    fake_ctx.config.mode = "everything"
+    with pytest.raises(DiscussError):
+        cli.run(**fake_ctx.kwargs)
+
+
+def test_choose_mode_input_accepts_menu_numbers(monkeypatch):
+    monkeypatch.setattr("builtins.input", lambda prompt: "2")
+    assert cli._choose_mode_via_input() == cli.MODE_PEER
 
 
 def test_main_without_target_class_fails_loud(monkeypatch, capsys):

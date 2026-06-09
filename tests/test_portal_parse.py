@@ -1,6 +1,7 @@
 import datetime as dt
 
 from discuss.portal_parse import (
+    extract_peer_posts,
     extract_prompt_text,
     is_login_page,
     parse_discussions,
@@ -146,6 +147,51 @@ def test_extract_prompt_text_missing_container_returns_empty():
     # edge: a page with no prompt container yields "" (caller treats empty as a failure),
     # rather than crashing on a None node.
     assert extract_prompt_text("<html><body><p>no prompt here</p></body></html>") == ""
+
+
+def test_extract_peer_posts_from_fixture(discussion_page_fixture_html):
+    # Peer-response drafting needs all visible classmate responses, not the instructor
+    # prompt or the new-post editor. The live fixture has 10 top-level comments loaded.
+    posts = extract_peer_posts(discussion_page_fixture_html)
+    assert len(posts) == 10
+    assert posts[0].index == 1
+    assert posts[0].author == "Student 8"
+    assert all(p.text == "[post content removed for privacy]" for p in posts)
+
+
+def test_extract_peer_posts_excludes_topic_prompt(discussion_page_fixture_html):
+    # The prompt also uses #bb-editor-textbox, so peer extraction must scope to comment
+    # wrappers. Otherwise the topic question would be eligible as a classmate post.
+    posts = extract_peer_posts(discussion_page_fixture_html)
+    joined = " ".join(p.text for p in posts)
+    assert "Please take a moment and share a few facts about yourself" not in joined
+
+
+def test_extract_peer_posts_synthetic_markup():
+    # Edge: missing author falls back to "Classmate"; blank bodies are skipped.
+    html = """
+    <div class="comment-wrapper">
+      <bb-message message-mode="view">
+        <bb-linked-username analytics-id="discussion.message.user">Ada</bb-linked-username>
+        <div class="ql-editor" contenteditable="false"><p>Useful point.</p></div>
+      </bb-message>
+    </div>
+    <div class="comment-wrapper">
+      <bb-message message-mode="view">
+        <div class="ql-editor" contenteditable="false"> </div>
+      </bb-message>
+    </div>
+    <div class="comment-wrapper">
+      <bb-message message-mode="view">
+        <div class="ql-editor" contenteditable="false">No author shown.</div>
+      </bb-message>
+    </div>
+    """
+    posts = extract_peer_posts(html)
+    assert [(p.index, p.author, p.text) for p in posts] == [
+        (1, "Ada", "Useful point."),
+        (2, "Classmate", "No author shown."),
+    ]
 
 
 # --- T006: login-page predicate (FR-003) ---

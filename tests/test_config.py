@@ -8,13 +8,14 @@ def test_confirm_defaults_on():
 
 def test_editor_default_is_wait_capable():
     # FR-009: save+close must block, so the default editor carries --wait.
-    assert Config.load({}).editor_cmd == ["code", "--wait"]
+    assert Config.load({}).editor_cmd == ["xed", "--wait"]
 
 
 def test_overrides_win():
     # operator config overrides defaults.
-    c = Config.load({"confirm": False, "editor_cmd": ["gedit"]})
+    c = Config.load({"confirm": False, "editor_cmd": ["gedit"], "mode": "peer"})
     assert c.confirm is False and c.editor_cmd == ["gedit"]
+    assert c.mode == "peer"
 
 
 def test_empty_overrides_all_defaults():
@@ -22,8 +23,9 @@ def test_empty_overrides_all_defaults():
     # field silently losing its default or a merge that mutates on the empty path).
     c = Config.load({})
     assert c.confirm is True
-    assert c.editor_cmd == ["code", "--wait"]
+    assert c.editor_cmd == ["xed", "--wait"]
     assert c.target_classes == []
+    assert c.mode is None
 
 
 def test_no_args_uses_defaults():

@@ -4,6 +4,24 @@ The human-readable archive log for `discuss`. Reverse-chronological. The git com
 the lossless half of the archive; this file renders it for a human. Each entry corresponds to a
 collapsed change package under `changes/NNN-slug/`.
 
+## 004 — menu-work-modes
+
+Split the run into an explicit work-mode menu: main-post mode drafts/edits `response.md` and
+fills only the top-level reply field, while peer-reply mode extracts visible classmate posts,
+drafts/edits `peer-reply-1.md` and `peer-reply-2.md`, and stops for manual paste. Added
+`DISCUSS_MODE=main|peer` for non-interactive shortcuts and split the Claude workflow template
+so each mode opens only the files it needs.
+
+## 003 — editor-fill-peer-replies
+
+Fix operator-reported run issues: default to Linux Mint Cinnamon's stock `xed --wait` editor;
+harden Blackboard/Quill insertion by waiting for a visible editor, explicitly focusing/selecting
+the rich-text field, inserting text, dispatching editor events, and verifying read-back; and add
+first-class drafting support for the two required classmate replies by extracting visible peer
+posts into `peer-posts.md`, having the primed session select two good candidates, and requiring
+`peer-reply-1.md` / `peer-reply-2.md` before main-post fill. The tool still never submits and
+still only fills the main top-level reply automatically; peer replies are saved for manual paste.
+
 ## 002 — contract-loop-conformance
 
 Adopt portable-core's **Contract Loop**: make `discuss` a conforming instance. Vendor the
