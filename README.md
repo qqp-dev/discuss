@@ -9,7 +9,8 @@ required classmate replies**. Main-post mode drops the edited response into the 
 reply field - and **stops there**. Peer-reply mode saves two edited drafts for you to paste
 manually under classmates' posts.
 
-> **What this tool will never do** (these are guarantees, see *Principles* below):
+> **What this tool will never do** (these are ratified statements in `intent.md`,
+> the project's single source of truth):
 > - **Never submits** a post. Main-post mode fills the reply field and leaves it for you.
 > - **Never stores or types your credentials.** You log in by hand; it reuses your session.
 > - **Never auto-generates** a reply without your input. The drafting session asks for your
@@ -54,7 +55,7 @@ holds *your* session — it never sees a password. Establish that session once:
    to your discussions with no fresh login or repeat 2FA, until the session genuinely expires
    (then you just log in by hand once more on the next run).
 
-No credential is ever read from or written to disk by the tool (FR-002).
+No credential is ever read from or written to disk by the tool.
 
 ## Configure (environment variables)
 
@@ -138,12 +139,8 @@ checklist against the real portal — by design, CI never touches the login-gate
 
 ## Principles
 
-- **Respectful guest (P-I).** Human pace, minimum page loads, no automated retry loops, no
-  credential automation. We are a guest in someone else's system.
-- **Assists, never impersonates (P-II).** The tool helps *you* write *your* post and draws
-  out your own stance and evidence; it never fabricates a submission. Main-post mode fills
-  the reply but the submit is always yours; peer mode only saves drafts for manual paste.
-- **One adapter for the portal (P-III / FR-013).** All portal selectors and live I/O are
-  confined to `portal_adapter.py`; everything else is pure and testable.
-- **Fail loud (P-IV / FR-014).** Each failure condition raises a specific, named error and
-  preserves your work rather than guessing or silently proceeding.
+The project's governing statements live in **`intent.md`** — the single source of truth,
+every line ratified by the operator. The guarantees above (never submits, never touches
+credentials, never auto-generates, human pace, fail-loud with your drafts preserved, one
+adapter file for the portal) are stated there in full; where this README and `intent.md`
+disagree, `intent.md` wins.
