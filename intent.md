@@ -8,7 +8,7 @@ The tool assists the operator's own work and never ghostwrites-and-submits: it d
 
 No run path ever locates or clicks a submit control: main-post mode fills the reply field and stops; peer-reply mode saves two drafts for manual paste.
 
-The tool never stores, types, or automates credentials: the operator logs in by hand once, and a persistent browser profile carries that session across runs. [machine]
+The tool never stores, types, or automates credentials: the operator logs in by hand once, and a persistent browser profile carries that session across runs.
 
 The tool is a respectful guest on a portal it does not own: human pace, the minimum pages the fixed click-path requires, no retry storms; at most one bounded, human-paced retry on a transient page-load timeout. [machine]
 
