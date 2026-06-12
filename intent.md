@@ -10,7 +10,7 @@ No run path ever locates or clicks a submit control: main-post mode fills the re
 
 The tool never stores, types, or automates credentials: the operator logs in by hand once, and a persistent browser profile carries that session across runs.
 
-The tool is a respectful guest on a portal it does not own: human pace, the minimum pages the fixed click-path requires, no retry storms; at most one bounded, human-paced retry on a transient page-load timeout. [machine]
+The tool is a respectful guest on a portal it does not own: human pace, the minimum pages the fixed click-path requires, no retry storms; at most one bounded, human-paced retry on a transient page-load timeout.
 
 On any failure the tool stops and reports the specific failing step, preserving the operator's drafts on disk; it never proceeds on a guess. [machine]
 
