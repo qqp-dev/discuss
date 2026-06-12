@@ -2,7 +2,7 @@
 
 ## foundations
 
-discuss is a single-operator local tool: one trigger drives the operator's already-logged-in UOPX student-portal session to the discussion with the soonest upcoming due date and runs one of two focused workflows — draft and fill the main post, or draft the two required classmate replies. [machine]
+discuss is a single-operator local tool: one trigger drives the operator's already-logged-in UOPX student-portal session to the discussion with the soonest upcoming due date and runs one of two focused workflows — draft and fill the main post, or draft the two required classmate replies.
 
 The tool assists the operator's own work and never ghostwrites-and-submits: it draws out the operator's stance and evidence, the editor step is mandatory, and the operator alone reviews and posts. [machine]
 
