@@ -1,9 +1,9 @@
 """[COVERAGE-EXEMPT] Live portal adapter — the ONLY home for UOPX selectors + click-path.
 
 Every portal-specific selector and all live Playwright navigate/extract/fill I/O live
-here and nowhere else (FR-013, Constitution P-III): a portal markup change is a one-file
-fix. This module is coverage-exempt because it is honestly exercisable only against the
-live, login-gated portal — which the Respectful-guest principle (P-I) forbids us from
+here and nowhere else (FR-013; the one-adapter statement in intent.md): a portal markup
+change is a one-file fix. This module is coverage-exempt because it is honestly exercisable
+only against the live, login-gated portal — which intent.md's respectful-guest statement forbids us from
 automating in CI. It is verified by the operator checklist in `docs/SELECTOR-CAPTURE.md`,
 not by unit tests. All PURE parsing/selection logic lives in `portal_parse.py` (which is
 NOT exempt and is covered by saved-HTML fixtures).
