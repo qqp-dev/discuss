@@ -12,7 +12,7 @@ The tool never stores, types, or automates credentials: the operator logs in by 
 
 The tool is a respectful guest on a portal it does not own: human pace, the minimum pages the fixed click-path requires, no retry storms; at most one bounded, human-paced retry on a transient page-load timeout.
 
-On any failure the tool stops and reports the specific failing step, preserving the operator's drafts on disk; it never proceeds on a guess. [machine]
+On any failure the tool stops and reports the specific failing step, preserving the operator's drafts on disk; it never proceeds on a guess.
 
 A browser action is verified by reading the resulting state back — the reply field's rendered content equals the intended text — never by trusting that the call returned. [machine]
 
