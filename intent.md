@@ -18,8 +18,6 @@ A browser action is verified by reading the resulting state back — the reply f
 
 ## structure
 
-contract.md is the single current truth for what discuss does and why; the implementation under src/ is its regenerable projection, and the archive — git history, CHANGELOG.md, the retired change packages — records how it got here. [machine]
-
 discuss is a conforming instance of portable-core's Contract Loop, adopted by copy: change packages stay separate under changes/ until archive, each declares its contract impact, the collapse at archive updates exactly the declared sections, and a change is not done while the contract is stale with respect to it. [machine]
 
 Every portal-specific selector and the entire click-path live in one adapter module; a portal markup change is a one-file fix, and the reply-field type is detected at runtime, never hard-coded. [machine]
