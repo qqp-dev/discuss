@@ -2,7 +2,8 @@
 
 This module holds NO live Playwright I/O and NO portal selectors — those live in
 `portal_adapter.py` (FR-013). Everything here is a pure function of its string inputs,
-so it is honestly unit-testable against saved-HTML fixtures (Constitution §2).
+so it is honestly unit-testable against saved-HTML fixtures (the saved-real-HTML coverage
+statement in intent.md).
 
 T014 seeds the file with the read-back verifier and the shared text-normalization
 helper; due-date parsing/selection (T010), prompt extraction (T011), and the login
