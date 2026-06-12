@@ -2,7 +2,7 @@
 
 Drives the **real** ``portal_adapter.fill_reply`` against the captured ``reply_form.html``
 loaded over ``file://`` in a headless Chromium — the controlled real boundary blessed by
-Constitution §2. This exercises the *actual* fill surface the criterion names (runtime
+intent.md's saved-real-HTML coverage statement. This exercises the *actual* fill surface the criterion names (runtime
 field-type detection picking the contenteditable Quill branch, the editor rendering the
 injected text, read-back passing, and nothing being submitted) instead of a fake. If the
 captured selector or the runtime branch is wrong, it surfaces HERE — offline, with zero
