@@ -24,4 +24,4 @@ Pure logic is fully covered against saved real portal HTML; the live-portal surf
 
 ## work
 
-discuss is linked to hypercore as an external project: intent.md is its single source of truth, and work/ holds the open asks — growing as they arrive, shrinking as they settle. [machine]
+discuss is linked to hypercore as an external project: intent.md is its single source of truth, and work/ holds the open asks — growing as they arrive, shrinking as they settle.
