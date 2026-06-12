@@ -6,7 +6,7 @@ discuss is a single-operator local tool: one trigger drives the operator's alrea
 
 The tool assists the operator's own work and never ghostwrites-and-submits: it draws out the operator's stance and evidence, the editor step is mandatory, and the operator alone reviews and posts.
 
-No run path ever locates or clicks a submit control: main-post mode fills the reply field and stops; peer-reply mode saves two drafts for manual paste. [machine]
+No run path ever locates or clicks a submit control: main-post mode fills the reply field and stops; peer-reply mode saves two drafts for manual paste.
 
 The tool never stores, types, or automates credentials: the operator logs in by hand once, and a persistent browser profile carries that session across runs. [machine]
 
