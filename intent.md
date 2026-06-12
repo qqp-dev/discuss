@@ -18,7 +18,7 @@ A browser action is verified by reading the resulting state back — the reply f
 
 ## structure
 
-Every portal-specific selector and the entire click-path live in one adapter module; a portal markup change is a one-file fix, and the reply-field type is detected at runtime, never hard-coded. [machine]
+Every portal-specific selector and the entire click-path live in one adapter module; a portal markup change is a one-file fix, and the reply-field type is detected at runtime, never hard-coded.
 
 Pure logic is fully covered against saved real portal HTML; the live-portal surface is coverage-exempt and verified by an operator-run live checklist — CI never touches the login-gated portal. [machine]
 
