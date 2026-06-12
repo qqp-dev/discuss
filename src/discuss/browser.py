@@ -2,7 +2,7 @@
 
 Wraps Playwright's ``launch_persistent_context`` so the tool reuses the operator's OWN
 human-authenticated browser session — no credentials are ever stored, read, or typed
-(FR-002, Constitution P-I). The login screen is recognised by the pure ``is_login_page``
+(FR-002; the no-credentials statement in intent.md). The login screen is recognised by the pure ``is_login_page``
 predicate (in ``portal_parse``, unit-tested against the saved login fixture); on the login
 page this module PAUSES and prompts the operator to log in by hand, and never automates the
 login form (FR-003).
@@ -39,7 +39,7 @@ def open_persistent_context(profile_dir):
 def ensure_logged_in(page, wait=None):
     """Pause for manual login while the current page is the login screen (FR-003).
 
-    Human-paced (Constitution P-I): while the login screen is showing, prompt the operator to
+    Human-paced (the respectful-guest statement in intent.md): while the login screen is showing, prompt the operator to
     log in by hand in the browser and press Enter to continue — or type ``q`` to give up —
     then re-check the predicate. There is NO tight retry loop and NO attempt cap, because each
     iteration blocks on the operator. Raises ``NotAuthenticated`` when the operator gives up
