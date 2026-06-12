@@ -18,8 +18,6 @@ A browser action is verified by reading the resulting state back — the reply f
 
 ## structure
 
-discuss is a conforming instance of portable-core's Contract Loop, adopted by copy: change packages stay separate under changes/ until archive, each declares its contract impact, the collapse at archive updates exactly the declared sections, and a change is not done while the contract is stale with respect to it. [machine]
-
 Every portal-specific selector and the entire click-path live in one adapter module; a portal markup change is a one-file fix, and the reply-field type is detected at runtime, never hard-coded. [machine]
 
 Pure logic is fully covered against saved real portal HTML; the live-portal surface is coverage-exempt and verified by an operator-run live checklist — CI never touches the login-gated portal. [machine]
