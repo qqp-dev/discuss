@@ -24,4 +24,4 @@ Pure logic is fully covered against saved real portal HTML; the live-portal surf
 
 ## work
 
-discuss is linked to hypercore as an external project (registry entry, 2026-06-11): this file is its intent in hypercore's sense — its current intended reality, distilled from constitution.md, contract.md, and README.md, which remain its operating documents. Statements here are machine-drafted and unendorsed until ratified from hyper; work/ grows as asks arrive. [machine]
+discuss is linked to hypercore as an external project: intent.md is its single source of truth. constitution.md and contract.md are material awaiting absorption — what they still carry (machine-read policy, the Contract Loop's gates and schemas) migrates into intent or retires with them — and work/ grows as asks arrive. [machine]
