@@ -61,7 +61,14 @@ DUE_DATE_CELL_SEL = "[class*='makeStylesgradeDetail']"
 
 # The link/title that opens a discussion (stable href hook; also carries
 # aria-label="Discussion, <title>"). Validated: 7 anchors -> 7 distinct discussions.
-DISCUSSION_LINK_SEL = "a[href*='/engagement/discussion/_']"
+#
+# Ultra dropped the `/engagement` path segment from discussion hrefs (seen live 2026-08-10
+# on _593023_1: `/ultra/courses/<id>/discussion/_NNN_1?view=discussions`, where the captured
+# fixtures have `/ultra/courses/<id>/engagement/discussion/_NNN_1?…`). Keying on the
+# `/discussion/_` stem matches BOTH shapes, so the saved fixtures still parse 7/7 while the
+# current portal parses. Narrower than `discussion` alone: the `?view=discussions` query
+# string cannot false-positive on it.
+DISCUSSION_LINK_SEL = "a[href*='/discussion/_']"
 
 # On a discussion page: the instructor prompt, read-only Quill. The id is reused 12×
 # (prompt + every read-only post), so the prompt is the FIRST match — the adapter/extractor
@@ -125,9 +132,16 @@ LOGIN_SHELL_BODY_SEL = "[data-testid='fr-body-image']"
 # so the DOM is empty at `domcontentloaded`; we must wait for the content (or the login shell) to
 # PAINT before reading it. `wait_for_selector` is mutation-observer-based — it resolves the
 # instant the element appears and otherwise blocks up to the timeout; it is NOT a tight poll, so
-# it stays within the Respectful-guest pace (P-I). ~20s tolerates a slow paint without hanging a
+# it stays within the Respectful-guest pace (P-I). ~60s tolerates a slow paint without hanging a
 # human-in-the-loop run.
-LANDING_WAIT_MS = 20_000
+#
+# Raised from 20s on live measurement (2026-08-10, _593023_1): a WARM discussion-page load
+# painted the prompt container between 10s and 20s, and the COLD first load of the same page
+# had not painted it at 30s. 20s sat right on that edge, so a cold open_discussion could time
+# out and report a selector miss for a page that was merely still loading. Because the wait is
+# mutation-observer-based, a longer ceiling costs a fast page nothing — it still resolves the
+# instant the element appears.
+LANDING_WAIT_MS = 60_000
 
 # The discussions area for a class. `class_link` is empty (the start-from-homepage click
 # is not used); we navigate directly to the engagement area, the stem every discussion row
