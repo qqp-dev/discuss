@@ -5,6 +5,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG_FILE="$SCRIPT_DIR/.env"
 UV="$HOME/.local/bin/uv"
+# shellcheck source=course-config.sh
+source "$SCRIPT_DIR/course-config.sh"
 
 echo ""
 echo "========================================"
@@ -36,30 +38,31 @@ echo "  done."
 echo ""
 
 # ── 4. Course ID ──────────────────────────────────────────────────────────────
-if [ -f "$CONFIG_FILE" ]; then
-    current="$(grep DISCUSS_TARGET_CLASSES "$CONFIG_FILE" | cut -d= -f2)"
+current="$(discuss_current_course_id "$CONFIG_FILE")"
+if [ -n "$current" ]; then
     echo "Current course ID: $current"
-    read -rp "Press Enter to keep it, or type a new one: " new_id
-    if [ -n "$new_id" ]; then
-        printf 'DISCUSS_TARGET_CLASSES=%s\n' "$new_id" > "$CONFIG_FILE"
-        echo "  saved."
-    else
-        echo "  keeping $current."
-    fi
+    while true; do
+        read -rp "Press Enter to keep it, or type a new one: " new_id
+        course_id="${new_id:-$current}"
+        if discuss_validate_course_id "$course_id"; then
+            break
+        fi
+    done
 else
     echo "Find your course ID in the UOPX portal URL:"
     echo "  https://vle.phoenix.edu/ultra/courses/_XXXXXXX_1/outline"
     echo ""
     while true; do
         read -rp "Enter your course ID (e.g. _577963_1): " course_id
-        if [ -n "$course_id" ]; then
+        if discuss_validate_course_id "$course_id"; then
             break
         fi
-        echo "  Course ID cannot be empty. Try again."
     done
-    printf 'DISCUSS_TARGET_CLASSES=%s\n' "$course_id" > "$CONFIG_FILE"
-    echo "  saved."
 fi
+
+discuss_save_course_id "$CONFIG_FILE" "$course_id"
+echo "  Saved course ID: $course_id"
+echo "  File: $CONFIG_FILE"
 echo ""
 
 # ── 5. Desktop launchers ─────────────────────────────────────────────────────

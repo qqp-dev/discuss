@@ -18,6 +18,7 @@ from discuss.errors import (
     NotAuthenticated,
     SelectorMiss,
 )
+from discuss.portal_parse import Discussion
 
 
 def test_confirm_decline_aborts(fake_ctx):
@@ -52,11 +53,33 @@ def test_confirm_disabled_skips_gate(fake_ctx):
 
 
 def test_no_upcoming_due_stops(fake_ctx):
-    # FR-014: nothing upcoming → stop, no fill.
+    # FR-014: nothing upcoming → stop, no fill, with an explicit no-parseable-dates state.
     fake_ctx.adapter.discussions = []  # select_soonest_due → None
-    with pytest.raises(NoUpcomingDiscussion):
+    with pytest.raises(NoUpcomingDiscussion) as caught:
         cli.run(**fake_ctx.kwargs)
+    assert str(caught.value) == (
+        "No upcoming discussion for class _577963_1. Discussions found: 0. "
+        "Discussions with parseable due dates: 0. Parseable due-date range: none "
+        "(no parseable due dates). Today: 2026-06-01."
+    )
+    assert fake_ctx.adapter.list_calls == 1
     assert fake_ctx.adapter.filled is False
+
+
+def test_no_upcoming_message_reports_list_and_date_range(fake_ctx):
+    fake_ctx.adapter.discussions = [
+        Discussion("Undated", None, "u0"),
+        Discussion("Past one", dt.date(2026, 5, 1), "u1"),
+        Discussion("Past two", dt.date(2026, 5, 20), "u2"),
+    ]
+    with pytest.raises(NoUpcomingDiscussion) as caught:
+        cli.run(**fake_ctx.kwargs)
+    assert str(caught.value) == (
+        "No upcoming discussion for class _577963_1. Discussions found: 3. "
+        "Discussions with parseable due dates: 2. Parseable due-date range: "
+        "2026-05-01 to 2026-05-20. Today: 2026-06-01."
+    )
+    assert fake_ctx.adapter.list_calls == 1
 
 
 def test_not_authenticated_surfaces(fake_ctx):
@@ -166,7 +189,7 @@ def test_happy_path_reports_discussion_title(fake_ctx):
     assert fake_ctx.selected.title in fake_ctx.last_message
 
 
-def test_load_overrides_parses_env():
+def test_load_overrides_parses_env(tmp_path):
     # FR-005/Q4: cli gathers config from env into the overrides dict (config.py delegates
     # this gathering to the orchestrator). Comma-split classes, space-split editor, and an
     # explicit confirm-off are all parsed; absent vars contribute no key (defaults win).
@@ -180,19 +203,49 @@ def test_load_overrides_parses_env():
         "DISCUSS_RUN_ROOT": "/tmp/r",
         "DISCUSS_MODE": "peer",
     }
-    ov = cli._load_overrides(env)
+    missing_dotenv = tmp_path / "does-not-exist"
+    ov = cli._load_overrides(env, dotenv_path=missing_dotenv)
     assert ov["target_classes"] == ["_577963_1", "_x_2"]
     assert ov["editor_cmd"] == ["xed", "--wait"]
     assert ov["confirm"] is False
     assert ov["profile_dir"] == Path("/tmp/p")
     assert ov["run_root"] == Path("/tmp/r")
     assert ov["mode"] == "peer"
-    assert cli._load_overrides({}) == {}  # nothing set → no overrides, all defaults win
+    assert cli._load_overrides({}, dotenv_path=missing_dotenv) == {}
 
 
-def test_confirm_truthy_env_enables_gate():
+def test_project_dotenv_is_fallback_and_process_environment_wins(monkeypatch, tmp_path):
+    project = tmp_path / "project"
+    project.mkdir()
+    dotenv = project / ".env"
+    dotenv.write_text(
+        "# saved launcher config\n"
+        "DISCUSS_TARGET_CLASSES=_from_file_1\n"
+        "DISCUSS_CONFIRM=false\n"
+        "OTHER_KEY=ignored\n",
+        encoding="utf-8",
+    )
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+    monkeypatch.setattr(cli, "_DOTENV_FILE", dotenv)
+
+    file_only = cli._load_overrides({})
+    assert file_only["target_classes"] == ["_from_file_1"]
+    assert file_only["confirm"] is False
+
+    process_wins = cli._load_overrides(
+        {"DISCUSS_TARGET_CLASSES": "_from_process_1", "DISCUSS_CONFIRM": "true"}
+    )
+    assert process_wins["target_classes"] == ["_from_process_1"]
+    assert process_wins["confirm"] is True
+
+
+def test_confirm_truthy_env_enables_gate(tmp_path):
     # DISCUSS_CONFIRM with a non-falsey value keeps the gate ON.
-    assert cli._load_overrides({"DISCUSS_CONFIRM": "1"})["confirm"] is True
+    assert cli._load_overrides(
+        {"DISCUSS_CONFIRM": "1"}, dotenv_path=tmp_path / "missing"
+    )["confirm"] is True
 
 
 def test_discuss_mode_config_skips_menu(fake_ctx):

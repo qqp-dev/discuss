@@ -41,8 +41,9 @@ exists). From then on, just click that icon to start a run.
 
 ## First-time login (one-time per machine)
 
-The tool drives a **persistent** browser profile (default `./profile/`, gitignored) that
-holds *your* session — it never sees a password. Establish that session once:
+The tool drives a **persistent** browser profile (default `<project>/profile/`,
+gitignored) that holds *your* session — it never sees a password. Establish that session
+once:
 
 1. Run `discuss` (or click the launcher). A real Chromium window opens and the tool
    navigates to your portal.
@@ -51,54 +52,65 @@ holds *your* session — it never sees a password. Establish that session once:
    choose **"keep me signed in" / "trust this device"** when offered, so the portal issues a
    *persistent* session and you are **not** asked to repeat two-step verification on every
    run. Then press **Enter** in the terminal; the tool retries the navigation and continues.
-3. The session is now saved in `profile/`; future runs reuse it directly — they go straight
-   to your discussions with no fresh login or repeat 2FA, until the session genuinely expires
-   (then you just log in by hand once more on the next run).
+3. The session is now saved in the project-root `profile/`; future runs reuse it directly —
+   they go straight to your discussions with no fresh login or repeat 2FA, until the session
+   genuinely expires (then you just log in by hand once more on the next run).
 
 No credential is ever read from or written to disk by the tool.
 
-## Configure (environment variables)
+## Configure (`.env` and environment variables)
 
-`discuss` reads its configuration from the environment (each var is optional except the
-target class):
+Setup saves plain `KEY=value` configuration in the project-root `.env`. The `discuss` CLI
+reads that same file itself on every launch, whether started from a desktop shortcut or by
+calling `.venv/bin/discuss` directly from any working directory. Process-environment values
+win over values in `.env`, so an inline override remains available. Each setting is optional
+except the target class:
 
 | Variable | Meaning | Default |
 |---|---|---|
 | `DISCUSS_TARGET_CLASSES` | **required** — comma-separated class id(s) to search. Find the id in the course URL: `.../ultra/courses/<class_id>/...` | (none — run aborts with guidance if unset) |
 | `DISCUSS_EDITOR` | the `--wait`-style GUI editor command for editing the draft (must block until you close it) | `xed --wait` |
-| `DISCUSS_PROFILE_DIR` | persistent browser profile dir (holds your session; no credentials) | `profile/` |
-| `DISCUSS_RUN_ROOT` | parent dir for per-run working dirs | `runs/` |
+| `DISCUSS_PROFILE_DIR` | persistent browser profile dir (holds your session; no credentials) | project-root `profile/` |
+| `DISCUSS_RUN_ROOT` | parent dir for per-run working dirs | project-root `runs/` |
 | `DISCUSS_CONFIRM` | set to `0`/`false`/`no`/`off` to disable the pre-extraction confirmation gate | gate **on** |
 | `DISCUSS_MODE` | optional shortcut that skips the menu; use `main` or `peer` | (menu shown) |
 
 The editor must **block** until you save and close. The default `xed --wait` is the stock
-Linux Mint Cinnamon text editor.
+Linux Mint Cinnamon text editor. Unless explicitly overridden, both desktop and terminal
+launches use the same project-root browser profile and run archive regardless of launch CWD.
 
 ## Run it
 
 **Double-click the Discuss icon** in your applications menu or Desktop shortcut.
 
-To run from a terminal (e.g. to change your course ID):
+To update the saved course ID or run from a terminal:
 
 ```bash
-bash setup.sh          # re-run setup to update the course ID
-# or run directly after setup:
-.venv/bin/discuss
+bash update-course.sh
+# run directly after setup (works from any CWD when invoked by its path):
+/path/to/discuss/.venv/bin/discuss
 ```
+
+The updater changes only `DISCUSS_TARGET_CLASSES` in the project-root `.env`; it preserves
+all other settings and reports the exact value and file it saved.
 
 ### What a run looks like
 
 1. Opens your persistent browser; pauses for manual login if needed.
 2. Navigates to your class's discussions and selects the **soonest upcoming due** one
    (past-due and undated discussions are skipped). If nothing is upcoming, it stops and
-   says so.
+   reports the searched class ID, discussions found, count with parseable due dates, the
+   parseable date range (or that there were no parseable dates), and today's date. Guided
+   `discuss validate` reports the same evidence instead of treating an empty week as an
+   unexplained result.
 3. Shows a menu:
    - `1) Main post`
    - `2) Two classmate replies`
 4. Shows a **confirmation** naming the discussion, due date, and selected work mode.
    Decline and nothing is extracted. (You can disable this gate in config; it defaults
    **on**.)
-5. In **main post** mode, the tool extracts the prompt to `runs/<run>/prompt.md`, starts a
+5. In **main post** mode, the tool extracts the prompt to the project-root
+   `runs/<run>/prompt.md`, starts a
    primed drafting session that **asks you** for your stance / main points / evidence,
    opens `response.md` in `xed`, then injects the edited text into the reply field,
    **verifies the read-back**, and leaves the browser open with the unsubmitted draft.

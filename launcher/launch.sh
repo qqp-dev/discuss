@@ -27,9 +27,8 @@ if [ ! -f "$CONFIG_FILE" ]; then
     _die "No course ID configured.\n\nOpen a terminal and run:\n  $PROJECT_DIR/setup.sh"
 fi
 
-# ── Load config ───────────────────────────────────────────────────────────────
-# shellcheck source=/dev/null
-set -a; source "$CONFIG_FILE"; set +a
+# The CLI reads CONFIG_FILE itself, so direct and launcher runs share one parser and any
+# process-environment override remains authoritative.
 
 # ── Build the command the terminal will run ───────────────────────────────────
 # Keep the window open after discuss exits so the user can read any output.

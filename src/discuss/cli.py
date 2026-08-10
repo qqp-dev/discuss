@@ -18,7 +18,7 @@ import sys
 from pathlib import Path
 
 from discuss import browser, handoff, portal_adapter
-from discuss.config import Config
+from discuss.config import Config, PROJECT_ROOT
 from discuss.errors import (
     DiscussError,
     FillVerifyFailed,
@@ -29,6 +29,7 @@ from discuss.errors import (
 from discuss.portal_parse import select_soonest_due
 
 _FALSEY = {"0", "false", "no", "off"}
+_DOTENV_FILE = PROJECT_ROOT / ".env"
 MODE_MAIN = "main"
 MODE_PEER = "peer"
 _MODE_LABELS = {
@@ -90,10 +91,31 @@ def _choose_mode_via_input() -> str:
         print("Please choose 1 for the main post or 2 for the classmate replies.")
 
 
-def _load_overrides(env=os.environ) -> dict:
-    """Gather config overrides from the environment (config.py delegates this to cli).
+def _read_dotenv(path: Path) -> dict[str, str]:
+    """Read the launcher's deliberately small project config format.
 
-    Recognised vars (each absent → no key, so the documented default wins):
+    The setup scripts save plain ``KEY=value`` lines. Blank lines, comments, and malformed
+    lines are ignored; no shell expansion or third-party dotenv syntax is attempted.
+    """
+    if not path.is_file():
+        return {}
+    values: dict[str, str] = {}
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        if key:
+            values[key] = value
+    return values
+
+
+def _load_overrides(env=None, *, dotenv_path: Path | None = None) -> dict:
+    """Gather config overrides from project ``.env``, then the process environment.
+
+    Process values take precedence over file values. Recognised vars (each absent → no key,
+    so the documented default wins):
       DISCUSS_TARGET_CLASSES  comma-separated class ids (e.g. ``_577963_1,_x_2``)
       DISCUSS_EDITOR          a ``--wait``-style editor command (space-separated)
       DISCUSS_PROFILE_DIR     persistent browser profile dir
@@ -101,23 +123,28 @@ def _load_overrides(env=os.environ) -> dict:
       DISCUSS_CONFIRM         set to a falsey value (0/false/no/off) to disable the gate
       DISCUSS_MODE            optional shortcut: main or peer (skips the menu)
     """
+    if env is None:
+        env = os.environ
+    merged = _read_dotenv(_DOTENV_FILE if dotenv_path is None else dotenv_path)
+    merged.update(env)
+
     overrides: dict = {}
-    classes = env.get("DISCUSS_TARGET_CLASSES", "").strip()
+    classes = merged.get("DISCUSS_TARGET_CLASSES", "").strip()
     if classes:
         overrides["target_classes"] = [c.strip() for c in classes.split(",") if c.strip()]
-    editor = env.get("DISCUSS_EDITOR", "").strip()
+    editor = merged.get("DISCUSS_EDITOR", "").strip()
     if editor:
         overrides["editor_cmd"] = editor.split()
-    profile = env.get("DISCUSS_PROFILE_DIR", "").strip()
+    profile = merged.get("DISCUSS_PROFILE_DIR", "").strip()
     if profile:
         overrides["profile_dir"] = Path(profile)
-    run_root = env.get("DISCUSS_RUN_ROOT", "").strip()
+    run_root = merged.get("DISCUSS_RUN_ROOT", "").strip()
     if run_root:
         overrides["run_root"] = Path(run_root)
-    confirm = env.get("DISCUSS_CONFIRM", "").strip()
+    confirm = merged.get("DISCUSS_CONFIRM", "").strip()
     if confirm:
         overrides["confirm"] = confirm.lower() not in _FALSEY
-    mode = env.get("DISCUSS_MODE", "").strip()
+    mode = merged.get("DISCUSS_MODE", "").strip()
     if mode:
         overrides["mode"] = mode
     return overrides
@@ -136,6 +163,21 @@ def _resolve_mode(config: Config, choose_mode) -> str:
     if mode not in _MODE_LABELS:
         raise DiscussError(f"invalid work mode {mode!r}; use 'main' or 'peer'")
     return mode
+
+
+def _no_upcoming_message(class_id: str, discussions, today: dt.date) -> str:
+    """Describe the exact class and list evidence behind a no-upcoming result."""
+    parseable_dates = [item.due_date for item in discussions if item.due_date is not None]
+    if parseable_dates:
+        date_range = f"{min(parseable_dates)} to {max(parseable_dates)}"
+    else:
+        date_range = "none (no parseable due dates)"
+    return (
+        f"No upcoming discussion for class {class_id}. "
+        f"Discussions found: {len(discussions)}. "
+        f"Discussions with parseable due dates: {len(parseable_dates)}. "
+        f"Parseable due-date range: {date_range}. Today: {today}."
+    )
 
 
 def _navigate_to_discussions(adapter, page, class_id, *, ensure_logged_in, announce) -> None:
@@ -202,9 +244,12 @@ def run(
         adapter, page, config.target_classes[0],
         ensure_logged_in=ensure_logged_in, announce=announce,
     )
-    selected = select_soonest_due(adapter.list_discussions(page), today)
+    discussions = adapter.list_discussions(page)
+    selected = select_soonest_due(discussions, today)
     if selected is None:
-        raise NoUpcomingDiscussion("no discussion has an upcoming due date")
+        raise NoUpcomingDiscussion(
+            _no_upcoming_message(config.target_classes[0], discussions, today)
+        )
 
     mode = _resolve_mode(config, choose_mode)
     gate_prompt = (
@@ -297,9 +342,10 @@ def validate(
             adapter, page, class_id, ensure_logged_in=ensure_logged_in, announce=announce
         )
         step = "list"
-        selected = select_soonest_due(adapter.list_discussions(page), today)
+        discussions = adapter.list_discussions(page)
+        selected = select_soonest_due(discussions, today)
         if selected is None:
-            announce("Guided validation: no upcoming discussion to validate — nothing to check.")
+            announce(_no_upcoming_message(class_id, discussions, today))
             return 1
         if not confirm(f"Found {selected.title!r} due {selected.due_date} — correct? [y] "):
             announce("Guided validation stopped: selection not confirmed.")
