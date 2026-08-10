@@ -10,3 +10,8 @@ scratch_*.py
 htmlcov/
 .coverage
 .env
+
+# qq-linked repo: operator-local state and machine config stay untracked.
+.qq/
+.pi/
+
