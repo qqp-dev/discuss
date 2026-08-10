@@ -1,3 +1,6 @@
+from pathlib import Path
+
+from discuss import config as config_module
 from discuss.config import Config
 
 
@@ -33,6 +36,16 @@ def test_no_args_uses_defaults():
     # — exercises the None→{} normalization branch.
     c = Config.load()
     assert c.confirm is True
+
+
+def test_default_local_state_is_project_rooted_regardless_of_cwd(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    project_root = Path(config_module.__file__).resolve().parents[2]
+    c = Config.load()
+    assert c.profile_dir == project_root / "profile"
+    assert c.run_root == project_root / "runs"
+    assert c.profile_dir.parent != Path.cwd()
+    assert c.run_root.parent != Path.cwd()
 
 
 def test_unknown_keys_ignored():

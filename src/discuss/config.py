@@ -3,9 +3,9 @@
 `Config` resolves the operator-tunable knobs the pipeline needs. `Config.load(overrides)`
 merges a dict of overrides over the documented defaults; unknown keys are ignored.
 
-The orchestrator (`cli.py`) is responsible for gathering values from a config file / env
-into that overrides dict — this module stays a pure dataclass + merge so it is fully
-testable without touching any real OS config path (spec T004 non-goal).
+The orchestrator (`cli.py`) is responsible for gathering values from the project-root
+`.env` and process environment into that overrides dict. This module stays a pure
+dataclass + merge.
 """
 
 from __future__ import annotations
@@ -13,10 +13,14 @@ from __future__ import annotations
 from dataclasses import dataclass, field, fields
 from pathlib import Path
 
+# The package is installed editable from this repository, so resolving from this source
+# file anchors every launch path to the project rather than the caller's working directory.
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
 # Defaults live here once (no duplicated literals).
 DEFAULT_EDITOR_CMD: list[str] = ["xed", "--wait"]
-DEFAULT_PROFILE_DIR = Path("profile")  # persistent browser profile (gitignored)
-DEFAULT_RUN_ROOT = Path("runs")  # where per-run dirs are created (gitignored)
+DEFAULT_PROFILE_DIR = PROJECT_ROOT / "profile"  # persistent browser profile (gitignored)
+DEFAULT_RUN_ROOT = PROJECT_ROOT / "runs"  # where per-run dirs are created (gitignored)
 
 
 @dataclass

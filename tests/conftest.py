@@ -83,6 +83,7 @@ class FakeAdapter:
 
     def __init__(self, discussions, run_dir, fill_raises=None):
         self.discussions = discussions
+        self.list_calls = 0
         self._run_dir = run_dir
         self.fill_raises = fill_raises
         self.extracted = False
@@ -98,6 +99,7 @@ class FakeAdapter:
         return page
 
     def list_discussions(self, page):
+        self.list_calls += 1
         return self.discussions
 
     def open_discussion(self, page, discussion):

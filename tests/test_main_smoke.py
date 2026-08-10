@@ -50,7 +50,9 @@ def test_main_smoke_reaches_defined_state(monkeypatch, tmp_path):
 
 def test_main_no_class_exits_with_guidance(monkeypatch, capsys):
     # the guard that the original IndexError needed: real main(), no class → rc 2 + guidance.
+    # Isolate the no-config case even when the suite intentionally supplies a real root .env.
     monkeypatch.delenv("DISCUSS_TARGET_CLASSES", raising=False)
+    monkeypatch.setattr(cli, "_load_overrides", lambda env=None: {})
     assert cli.main() == 2
     assert "DISCUSS_TARGET_CLASSES" in capsys.readouterr().out
 

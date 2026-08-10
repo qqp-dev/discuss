@@ -39,6 +39,7 @@ class FakeAdapter:
 
     def __init__(self, miss=None):
         self.miss = miss
+        self.list_calls = 0
         self.filled = False
         self.fill_text = None
 
@@ -47,6 +48,7 @@ class FakeAdapter:
             raise SelectorMiss("discussions list did not render")
 
     def list_discussions(self, page):
+        self.list_calls += 1
         if self.miss == "list":
             raise SelectorMiss("rows did not resolve")
         return [Discussion(title="Wk 1 Discussion: Critical Thinking",
@@ -118,13 +120,22 @@ def test_validate_happy_path_walks_and_fills_without_submitting(tmp_path):
 
 
 def test_validate_stops_when_nothing_upcoming(tmp_path):
-    # no upcoming discussion → stop before any confirm; never reach a fill.
+    # no upcoming discussion → report the same evidence-rich diagnostic as a normal run,
+    # stop before any confirm, and never reach a fill.
     adapter = FakeAdapter()
     asked = []
+    messages = []
     rc = cli.validate(fake_page_factory(), adapter=adapter,
                       confirm=lambda p: asked.append(p) or True, fixtures_dir=tmp_path,
+                      class_id="_577963_1", announce=messages.append,
                       today=dt.date(3000, 1, 1))  # the only discussion (2999) is now past
     assert rc != 0
+    assert messages == [
+        "No upcoming discussion for class _577963_1. Discussions found: 1. "
+        "Discussions with parseable due dates: 1. Parseable due-date range: "
+        "2999-01-01 to 2999-01-01. Today: 3000-01-01."
+    ]
+    assert adapter.list_calls == 1
     assert adapter.filled is False
     assert asked == []  # stopped before the first checkpoint
 
