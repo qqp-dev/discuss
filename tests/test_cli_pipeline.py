@@ -60,7 +60,8 @@ def test_no_upcoming_due_stops(fake_ctx):
     assert str(caught.value) == (
         "No upcoming discussion for class _577963_1. Discussions found: 0. "
         "Discussions with parseable due dates: 0. Parseable due-date range: none "
-        "(no parseable due dates). Today: 2026-06-01."
+        "(no parseable due dates). Today: 2026-06-01. Saved the list page markup to "
+        f"{fake_ctx.config.run_root / cli.LIST_SNAPSHOT_FILE}."
     )
     assert fake_ctx.adapter.list_calls == 1
     assert fake_ctx.adapter.filled is False
@@ -77,9 +78,31 @@ def test_no_upcoming_message_reports_list_and_date_range(fake_ctx):
     assert str(caught.value) == (
         "No upcoming discussion for class _577963_1. Discussions found: 3. "
         "Discussions with parseable due dates: 2. Parseable due-date range: "
-        "2026-05-01 to 2026-05-20. Today: 2026-06-01."
+        "2026-05-01 to 2026-05-20. Today: 2026-06-01. Saved the list page markup to "
+        f"{fake_ctx.config.run_root / cli.LIST_SNAPSHOT_FILE}."
     )
     assert fake_ctx.adapter.list_calls == 1
+
+
+def test_no_upcoming_snapshots_the_list_page(fake_ctx):
+    # The evidence behind a no-upcoming result is captured by the tool itself: the exact
+    # list markup the selection was made from lands in the run root.
+    fake_ctx.adapter.discussions = []
+    with pytest.raises(NoUpcomingDiscussion):
+        cli.run(**fake_ctx.kwargs)
+    snapshot = fake_ctx.config.run_root / cli.LIST_SNAPSHOT_FILE
+    assert snapshot.read_text(encoding="utf-8") == "<html><body>captured list markup</body></html>"
+
+
+def test_no_upcoming_snapshot_failure_still_reports(fake_ctx, tmp_path):
+    # A failed snapshot write is reported in the message, never raised over the result.
+    blocker = tmp_path / "not-a-dir"
+    blocker.write_text("x", encoding="utf-8")
+    fake_ctx.config.run_root = blocker
+    fake_ctx.adapter.discussions = []
+    with pytest.raises(NoUpcomingDiscussion) as caught:
+        cli.run(**fake_ctx.kwargs)
+    assert "Could not save the list page markup" in str(caught.value)
 
 
 def test_not_authenticated_surfaces(fake_ctx):

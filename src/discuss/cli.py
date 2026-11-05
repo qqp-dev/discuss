@@ -180,6 +180,23 @@ def _no_upcoming_message(class_id: str, discussions, today: dt.date) -> str:
     )
 
 
+LIST_SNAPSHOT_FILE = "discussions_list_live.html"
+
+
+def _snapshot_list(page, directory) -> str:
+    """Save the discussions-list markup the selection was made from, and return a sentence
+    naming where — the evidence behind a no-upcoming result (FR-018 spirit: the tool
+    captures live markup itself). A failed write is reported, never raised: the diagnosis
+    must not mask the no-upcoming result it explains."""
+    snapshot = Path(directory) / LIST_SNAPSHOT_FILE
+    try:
+        snapshot.parent.mkdir(parents=True, exist_ok=True)
+        snapshot.write_text(page.content(), encoding="utf-8")
+    except OSError as exc:
+        return f" Could not save the list page markup ({exc})."
+    return f" Saved the list page markup to {snapshot}."
+
+
 def _navigate_to_discussions(adapter, page, class_id, *, ensure_logged_in, announce) -> None:
     """Navigate to the discussions list, pausing for MANUAL login post-navigation if the
     portal redirects to the SSO login (FR-003, Esc#2).
@@ -249,6 +266,7 @@ def run(
     if selected is None:
         raise NoUpcomingDiscussion(
             _no_upcoming_message(config.target_classes[0], discussions, today)
+            + _snapshot_list(page, config.run_root)
         )
 
     mode = _resolve_mode(config, choose_mode)
@@ -345,7 +363,10 @@ def validate(
         discussions = adapter.list_discussions(page)
         selected = select_soonest_due(discussions, today)
         if selected is None:
-            announce(_no_upcoming_message(class_id, discussions, today))
+            announce(
+                _no_upcoming_message(class_id, discussions, today)
+                + _snapshot_list(page, fixtures_dir)
+            )
             return 1
         if not confirm(f"Found {selected.title!r} due {selected.due_date} — correct? [y] "):
             announce("Guided validation stopped: selection not confirmed.")

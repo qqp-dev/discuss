@@ -133,8 +133,12 @@ def test_validate_stops_when_nothing_upcoming(tmp_path):
     assert messages == [
         "No upcoming discussion for class _577963_1. Discussions found: 1. "
         "Discussions with parseable due dates: 1. Parseable due-date range: "
-        "2999-01-01 to 2999-01-01. Today: 3000-01-01."
+        "2999-01-01 to 2999-01-01. Today: 3000-01-01. Saved the list page markup to "
+        f"{tmp_path / cli.LIST_SNAPSHOT_FILE}."
     ]
+    assert (tmp_path / cli.LIST_SNAPSHOT_FILE).read_text(encoding="utf-8") == (
+        "<html><body>captured live markup</body></html>"
+    )
     assert adapter.list_calls == 1
     assert adapter.filled is False
     assert asked == []  # stopped before the first checkpoint

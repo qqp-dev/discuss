@@ -162,6 +162,37 @@ def select_soonest_due(items, today: dt.date):
     return min(upcoming, key=lambda i: i.due_date)
 
 
+def list_signature(html: str) -> tuple[int, int]:
+    """Return ``(rows, dated rows)`` for a discussions-list page: the settle signal.
+
+    Ultra paints the row shells first and fills each row's due-date cell in later (lower
+    rows lag), so a snapshot taken the instant the first row appears can see real, dated
+    discussions as undated. The live adapter re-reads the page until this pair stops
+    changing before it parses for selection.
+    """
+    items = parse_discussions(html)
+    return len(items), sum(1 for item in items if item.due_date is not None)
+
+
+def wait_until_stable(read, *, sleep, interval_s: float, stable_reads: int, max_reads: int):
+    """Call ``read()`` until it returns the same value ``stable_reads`` times in a row.
+
+    Bounded: gives up after ``max_reads`` calls and returns the last value, so a page that
+    never settles costs a fixed wait instead of a hang. ``sleep`` is injected so the polling
+    is testable without real time and so the live caller can use the page's own timer.
+    """
+    last = read()
+    streak = 1
+    reads = 1
+    while streak < stable_reads and reads < max_reads:
+        sleep(interval_s)
+        value = read()
+        reads += 1
+        streak = streak + 1 if value == last else 1
+        last = value
+    return last
+
+
 def extract_prompt_text(html: str, *, container_selector: str = PROMPT_CONTAINER_SEL) -> str:
     """Return the discussion's instructor prompt as normalized plaintext (FR-006).
 

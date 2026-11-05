@@ -4,9 +4,11 @@ from discuss.portal_parse import (
     extract_peer_posts,
     extract_prompt_text,
     is_login_page,
+    list_signature,
     parse_discussions,
     select_soonest_due,
     verify_fill_readback,
+    wait_until_stable,
 )
 
 
@@ -211,3 +213,53 @@ def test_login_page_detected_by_url_when_marker_absent():
     # FR-003: a login redirect can show a /login URL before its body (and the marker)
     # renders; the URL signal alone still pauses for manual login.
     assert is_login_page("https://www.phoenix.edu/login", "<html><body>…</body></html>") is True
+
+
+def _half_painted(html: str, unpainted: int) -> str:
+    """The list as Ultra shows it mid-render: the last ``unpainted`` due cells still empty."""
+    import re
+
+    matches = list(re.finditer(r"Due date: [^<]*", html))
+    for m in reversed(matches[len(matches) - unpainted:]):
+        html = html[: m.start()] + html[m.end():]
+    return html
+
+
+def test_list_signature_counts_rows_and_dated_rows(discussions_fixture_html):
+    assert list_signature(discussions_fixture_html) == (7, 5)
+
+
+def test_list_signature_sees_unpainted_due_dates(discussions_fixture_html):
+    # The 2026-11-05 failure shape: rows and links present, lower due cells not yet filled.
+    # Same row count, fewer dated rows — so the settle loop keeps waiting.
+    half = _half_painted(discussions_fixture_html, 2)
+    assert list_signature(half) == (7, 3)
+    items = parse_discussions(half)
+    assert select_soonest_due(items, dt.date(2026, 6, 20)) is None  # the bug, pre-settle
+    full = parse_discussions(discussions_fixture_html)
+    assert select_soonest_due(full, dt.date(2026, 6, 20)).due_date == dt.date(2026, 6, 23)
+
+
+def test_wait_until_stable_waits_through_late_paint():
+    reads = iter([(7, 3), (7, 3), (7, 5), (7, 5), (7, 5), (9, 9)])
+    sleeps = []
+    result = wait_until_stable(lambda: next(reads), sleep=sleeps.append,
+                               interval_s=1.0, stable_reads=3, max_reads=15)
+    assert result == (7, 5)
+    assert len(sleeps) == 4  # 5 reads; stops as soon as 3 agree
+
+
+def test_wait_until_stable_is_bounded():
+    counter = iter(range(100))
+    sleeps = []
+    result = wait_until_stable(lambda: next(counter), sleep=sleeps.append,
+                               interval_s=1.0, stable_reads=3, max_reads=4)
+    assert result == 3
+    assert len(sleeps) == 3
+
+
+def test_wait_until_stable_settled_page_costs_two_intervals():
+    sleeps = []
+    assert wait_until_stable(lambda: (7, 5), sleep=sleeps.append,
+                             interval_s=1.0, stable_reads=3, max_reads=15) == (7, 5)
+    assert sleeps == [1.0, 1.0]

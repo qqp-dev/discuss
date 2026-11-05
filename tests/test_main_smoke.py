@@ -94,7 +94,7 @@ def test_auth_pause_is_post_navigation_with_retry(tmp_path):
     )
     a = _A()
     with pytest.raises(NoUpcomingDiscussion):
-        cli.run(config=cfg, browser_factory=lambda: (object(), object()), adapter=a,
+        cli.run(config=cfg, browser_factory=lambda: (object(), _FakePage()), adapter=a,
                 today=dt.date(2026, 6, 1), ensure_logged_in=pause)
     assert events == ["navigate", "pause", "navigate"]  # pause AFTER nav; exactly one retry
     assert a.nav == 2

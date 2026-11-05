@@ -119,6 +119,13 @@ class FakeAdapter:
         self.filled = True  # never sets submitted — the real fill never submits either
 
 
+class FakeListPage:
+    """A page whose content() is the captured list markup a no-upcoming snapshot saves."""
+
+    def content(self):
+        return "<html><body>captured list markup</body></html>"
+
+
 class FakeCtx:
     """Bundles the fakes + injected seams so a test calls ``cli.run(**fake_ctx.kwargs)``."""
 
@@ -149,7 +156,9 @@ class FakeCtx:
 
     # injected seams ---------------------------------------------------------------
     def _browser_factory(self):
-        return (object(), object())  # (context, page) — opaque; the fake adapter ignores them
+        # (context, page) — the fake adapter ignores the page; only a no-upcoming snapshot
+        # reads its content().
+        return (object(), FakeListPage())
 
     def _ensure_logged_in(self, page):
         return page

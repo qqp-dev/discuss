@@ -143,6 +143,12 @@ LOGIN_SHELL_BODY_SEL = "[data-testid='fr-body-image']"
 # instant the element appears.
 LANDING_WAIT_MS = 60_000
 
+# Discussions-list settle (see _settle_discussion_list): re-read every second until the
+# (rows, dated rows) signature is unchanged for 3 reads in a row, capped at 15 reads (~15s).
+LIST_SETTLE_INTERVAL_MS = 1_000
+LIST_SETTLE_STABLE_READS = 3
+LIST_SETTLE_MAX_READS = 15
+
 # The discussions area for a class. `class_link` is empty (the start-from-homepage click
 # is not used); we navigate directly to the engagement area, the stem every discussion row
 # in the captured list shares (…/courses/<id>/engagement). The exact landing URL is a live
@@ -251,11 +257,42 @@ def go_to_discussions(page, class_id: str):
     return page
 
 
+def _settle_discussion_list(page) -> None:
+    """Let the discussions list finish painting before it is read (FR-004).
+
+    Ultra renders the row shells first and fills each row's due date in afterwards; rows
+    lower on the page lag (seen live 2026-11-05: weeks 4–5 read as undated while weeks 1–3
+    parsed). Each read scrolls the last row into view — one in-page scroll, no navigation,
+    so human pace holds — then re-reads the (rows, dated rows) signature until it holds
+    steady. Bounded at LIST_SETTLE_MAX_READS reads.
+    """
+    from discuss.portal_parse import list_signature, wait_until_stable
+
+    def read():
+        rows = page.query_selector_all(DISCUSSION_ROWS_SEL)
+        if rows:
+            try:
+                rows[-1].scroll_into_view_if_needed(timeout=LIST_SETTLE_INTERVAL_MS)
+            except Exception:  # detached mid-render or not scrollable: just re-read
+                pass
+        return list_signature(page.content())
+
+    wait_until_stable(
+        read,
+        sleep=lambda seconds: page.wait_for_timeout(seconds * 1000),
+        interval_s=LIST_SETTLE_INTERVAL_MS / 1000,
+        stable_reads=LIST_SETTLE_STABLE_READS,
+        max_reads=LIST_SETTLE_MAX_READS,
+    )
+
+
 def list_discussions(page):
     """Return the discussions on the current list page (FR-004), delegating the parse to
-    the unit-tested ``portal_parse.parse_discussions``."""
+    the unit-tested ``portal_parse.parse_discussions``. Waits for the list to settle first
+    so lazily-painted due dates are not read as missing."""
     from discuss.portal_parse import parse_discussions
 
+    _settle_discussion_list(page)
     return parse_discussions(page.content())
 
 
